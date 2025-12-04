@@ -696,6 +696,104 @@ async def list_tools() -> list[Tool]:
                 "required": ["course_id"],
             },
         ),
+        # Advanced Enrollment & Progress Tools
+        Tool(
+            name="ld_get_course_enrollments",
+            description="Get list of all users enrolled in a course",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "number", "description": "Course ID"},
+                },
+                "required": ["course_id"],
+            },
+        ),
+        Tool(
+            name="ld_migrate_students",
+            description="Migrate students from one course to another",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "from_course_id": {"type": "number", "description": "Source course ID"},
+                    "to_course_id": {"type": "number", "description": "Destination course ID"},
+                    "user_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "Specific user IDs to migrate (omit for all enrolled users)",
+                    },
+                    "remove_from_source": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether to unenroll from source course",
+                    },
+                },
+                "required": ["from_course_id", "to_course_id"],
+            },
+        ),
+        Tool(
+            name="ld_mark_course_complete",
+            description="Mark a course as complete for a user",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "number", "description": "User ID"},
+                    "course_id": {"type": "number", "description": "Course ID"},
+                    "completion_time": {"type": "number", "description": "Unix timestamp (optional, defaults to now)"},
+                },
+                "required": ["user_id", "course_id"],
+            },
+        ),
+        Tool(
+            name="ld_get_student_progress",
+            description="Get detailed progress for a student in a course",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "number", "description": "User ID"},
+                    "course_id": {"type": "number", "description": "Course ID"},
+                },
+                "required": ["user_id", "course_id"],
+            },
+        ),
+        Tool(
+            name="ld_duplicate_course",
+            description="Duplicate a course with its structure and settings",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "source_course_id": {"type": "number", "description": "Source course ID to duplicate"},
+                    "new_title": {"type": "string", "description": "Title for the new course"},
+                    "new_slug": {"type": "string", "description": "URL slug (optional, auto-generated if not provided)"},
+                    "copy_lessons": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether to copy lesson associations",
+                    },
+                },
+                "required": ["source_course_id", "new_title"],
+            },
+        ),
+        Tool(
+            name="ld_set_course_steps",
+            description="Set the course builder structure with specified lessons",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "number", "description": "Course ID"},
+                    "lesson_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of lesson IDs to include in order",
+                    },
+                    "enable_shared_steps": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Whether to enable shared steps feature",
+                    },
+                },
+                "required": ["course_id", "lesson_ids"],
+            },
+        ),
         # WooCommerce Product Management
         Tool(
             name="wc_create_product",
@@ -1222,6 +1320,54 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             result = ld.export_completion_report(
                 course_id=arguments["course_id"],
                 format=arguments.get("format", "json"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Advanced Enrollment & Progress
+        elif name == "ld_get_course_enrollments":
+            result = ld.get_course_enrollments(
+                course_id=arguments["course_id"]
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_migrate_students":
+            result = ld.migrate_students(
+                from_course_id=arguments["from_course_id"],
+                to_course_id=arguments["to_course_id"],
+                user_ids=arguments.get("user_ids"),
+                remove_from_source=arguments.get("remove_from_source", True),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_mark_course_complete":
+            result = ld.mark_course_complete(
+                user_id=arguments["user_id"],
+                course_id=arguments["course_id"],
+                completion_time=arguments.get("completion_time"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_get_student_progress":
+            result = ld.get_student_progress(
+                user_id=arguments["user_id"],
+                course_id=arguments["course_id"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_duplicate_course":
+            result = ld.duplicate_course(
+                source_course_id=arguments["source_course_id"],
+                new_title=arguments["new_title"],
+                new_slug=arguments.get("new_slug"),
+                copy_lessons=arguments.get("copy_lessons", True),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_set_course_steps":
+            result = ld.set_course_steps(
+                course_id=arguments["course_id"],
+                lesson_ids=arguments["lesson_ids"],
+                enable_shared_steps=arguments.get("enable_shared_steps", True),
             )
             return [TextContent(type="text", text=str(result))]
 

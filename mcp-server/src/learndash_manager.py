@@ -1,5 +1,6 @@
 """LearnDash LMS management for course creation and editing."""
 
+import json
 import shlex
 import logging
 from typing import Optional, Literal, Union, Any
@@ -2161,3 +2162,424 @@ class LearnDashManager:
         }
 
         return report
+
+    # ==================== ADVANCED ENROLLMENT & PROGRESS ====================
+
+    def get_course_enrollments(self, course_id: int) -> dict:
+        """
+        Get list of all users enrolled in a course.
+
+        Uses LearnDash's native learndash_get_users_for_course() function.
+
+        Args:
+            course_id: Course post ID
+
+        Returns:
+            Dict with enrolled users list and count
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        course_id = self._validate_positive_int(course_id, "course_id")
+
+        php_code = f'''
+$course_id = {course_id};
+$users = learndash_get_users_for_course($course_id, array(), false);
+$result = array("course_id" => $course_id, "users" => array(), "count" => 0);
+
+if ($users && !empty($users->results)) {{
+    $result["count"] = count($users->results);
+    foreach($users->results as $user_id) {{
+        $user = get_user_by("id", $user_id);
+        $result["users"][] = array(
+            "user_id" => $user_id,
+            "email" => $user->user_email,
+            "display_name" => $user->display_name
+        );
+    }}
+}}
+echo json_encode($result);
+'''
+        cmd = f'eval {shlex.quote(php_code)}'
+        result = self.cli.execute(cmd, format=None)
+
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"course_id": course_id, "users": [], "count": 0, "error": result}
+
+    def migrate_students(
+        self,
+        from_course_id: int,
+        to_course_id: int,
+        user_ids: Optional[list[int]] = None,
+        remove_from_source: bool = True
+    ) -> dict:
+        """
+        Migrate students from one course to another.
+
+        Args:
+            from_course_id: Source course ID
+            to_course_id: Destination course ID
+            user_ids: Specific user IDs to migrate (None = all enrolled users)
+            remove_from_source: Whether to unenroll from source course
+
+        Returns:
+            Dict with migration results
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        from_course_id = self._validate_positive_int(from_course_id, "from_course_id")
+        to_course_id = self._validate_positive_int(to_course_id, "to_course_id")
+
+        user_ids_php = "null"
+        if user_ids:
+            validated_ids = [self._validate_positive_int(uid, f"user_ids[{i}]")
+                           for i, uid in enumerate(user_ids)]
+            user_ids_php = "array(" + ",".join(map(str, validated_ids)) + ")"
+
+        remove_php = "true" if remove_from_source else "false"
+
+        php_code = f'''
+$from_course = {from_course_id};
+$to_course = {to_course_id};
+$specific_users = {user_ids_php};
+$remove_from_source = {remove_php};
+
+$users = $specific_users;
+if ($users === null) {{
+    $enrolled = learndash_get_users_for_course($from_course, array(), false);
+    $users = ($enrolled && !empty($enrolled->results)) ? $enrolled->results : array();
+}}
+
+$result = array(
+    "from_course" => $from_course,
+    "to_course" => $to_course,
+    "migrated" => array(),
+    "failed" => array(),
+    "count" => 0
+);
+
+foreach ($users as $user_id) {{
+    $user = get_user_by("id", $user_id);
+    if (!$user) {{
+        $result["failed"][] = array("user_id" => $user_id, "error" => "User not found");
+        continue;
+    }}
+
+    // Enroll in new course
+    ld_update_course_access($user_id, $to_course, false);
+
+    // Remove from old course if requested
+    if ($remove_from_source) {{
+        ld_update_course_access($user_id, $from_course, true);
+    }}
+
+    $result["migrated"][] = array(
+        "user_id" => $user_id,
+        "email" => $user->user_email
+    );
+    $result["count"]++;
+}}
+
+echo json_encode($result);
+'''
+        cmd = f'eval {shlex.quote(php_code)}'
+        result = self.cli.execute(cmd, format=None)
+
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"error": result}
+
+    def mark_course_complete(
+        self,
+        user_id: int,
+        course_id: int,
+        completion_time: Optional[int] = None
+    ) -> dict:
+        """
+        Mark a course as complete for a user.
+
+        Args:
+            user_id: User ID
+            course_id: Course post ID
+            completion_time: Unix timestamp (None = current time)
+
+        Returns:
+            Dict with completion status
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        user_id = self._validate_positive_int(user_id, "user_id")
+        course_id = self._validate_positive_int(course_id, "course_id")
+
+        time_php = str(completion_time) if completion_time else "time()"
+
+        php_code = f'''
+$user_id = {user_id};
+$course_id = {course_id};
+$completion_time = {time_php};
+
+global $wpdb;
+
+// Insert course completion activity
+$wpdb->insert(
+    $wpdb->prefix . "learndash_user_activity",
+    array(
+        "user_id" => $user_id,
+        "post_id" => $course_id,
+        "course_id" => $course_id,
+        "activity_type" => "course",
+        "activity_status" => 1,
+        "activity_started" => $completion_time - 86400,
+        "activity_completed" => $completion_time,
+        "activity_updated" => $completion_time
+    )
+);
+
+// Set user meta for course completion
+update_user_meta($user_id, "course_completed_" . $course_id, $completion_time);
+
+$user = get_user_by("id", $user_id);
+echo json_encode(array(
+    "success" => true,
+    "user_id" => $user_id,
+    "user_email" => $user->user_email,
+    "course_id" => $course_id,
+    "completion_time" => $completion_time,
+    "completion_date" => date("Y-m-d H:i:s", $completion_time)
+));
+'''
+        cmd = f'eval {shlex.quote(php_code)}'
+        result = self.cli.execute(cmd, format=None)
+
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"success": False, "error": result}
+
+    def get_student_progress(self, user_id: int, course_id: int) -> dict:
+        """
+        Get detailed progress for a student in a course.
+
+        Args:
+            user_id: User ID
+            course_id: Course post ID
+
+        Returns:
+            Dict with detailed progress data
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        user_id = self._validate_positive_int(user_id, "user_id")
+        course_id = self._validate_positive_int(course_id, "course_id")
+
+        php_code = f'''
+$user_id = {user_id};
+$course_id = {course_id};
+
+$user = get_user_by("id", $user_id);
+$progress = learndash_user_get_course_progress($user_id, $course_id);
+$course_progress = learndash_course_progress(array(
+    "user_id" => $user_id,
+    "course_id" => $course_id,
+    "array" => true
+));
+
+$completed_timestamp = get_user_meta($user_id, "course_completed_" . $course_id, true);
+
+echo json_encode(array(
+    "user_id" => $user_id,
+    "user_email" => $user ? $user->user_email : "Unknown",
+    "course_id" => $course_id,
+    "steps_completed" => isset($progress["completed"]) ? $progress["completed"] : 0,
+    "steps_total" => isset($progress["total"]) ? $progress["total"] : 0,
+    "percentage" => isset($course_progress["percentage"]) ? $course_progress["percentage"] : 0,
+    "is_complete" => !empty($completed_timestamp),
+    "completion_timestamp" => $completed_timestamp ? (int)$completed_timestamp : null,
+    "completion_date" => $completed_timestamp ? date("Y-m-d H:i:s", $completed_timestamp) : null
+));
+'''
+        cmd = f'eval {shlex.quote(php_code)}'
+        result = self.cli.execute(cmd, format=None)
+
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"user_id": user_id, "course_id": course_id, "error": result}
+
+    def duplicate_course(
+        self,
+        source_course_id: int,
+        new_title: str,
+        new_slug: Optional[str] = None,
+        copy_lessons: bool = True
+    ) -> dict:
+        """
+        Duplicate a course with its structure.
+
+        Args:
+            source_course_id: Source course post ID
+            new_title: Title for the new course
+            new_slug: URL slug (auto-generated if not provided)
+            copy_lessons: Whether to copy lesson associations
+
+        Returns:
+            Dict with new course details
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        source_course_id = self._validate_positive_int(source_course_id, "source_course_id")
+        new_title = self._validate_string(new_title, "new_title", max_length=200)
+
+        # Get source course
+        source_course = self.cli.get_post(source_course_id)
+        if not source_course:
+            raise ValueError(f"Source course {source_course_id} not found")
+
+        # Create new course
+        slug_param = f'--post_name={shlex.quote(new_slug)}' if new_slug else ''
+        cmd = (
+            f'post create --post_type=sfwd-courses '
+            f'--post_title={shlex.quote(new_title)} '
+            f'--post_status=draft {slug_param} --porcelain'
+        )
+        result = self.cli.execute(cmd, format=None)
+        new_course_id = int(result.strip())
+
+        # Copy content
+        source_content = source_course.get('content', {}).get('raw', '')
+        if source_content:
+            self.cli.execute(
+                f'post update {shlex.quote(str(new_course_id))} '
+                f'--post_content={shlex.quote(source_content)}'
+            )
+
+        # Copy key meta
+        meta_keys_to_copy = ['_sfwd-courses', 'course_sections', '_thumbnail_id']
+        for meta_key in meta_keys_to_copy:
+            try:
+                meta_value = self.cli.execute(
+                    f'post meta get {shlex.quote(str(source_course_id))} {shlex.quote(meta_key)}',
+                    format=None
+                )
+                if meta_value:
+                    self.cli.execute(
+                        f'post meta update {shlex.quote(str(new_course_id))} '
+                        f'{shlex.quote(meta_key)} {shlex.quote(meta_value)}'
+                    )
+            except Exception:
+                pass
+
+        # Copy course steps if requested
+        if copy_lessons:
+            try:
+                steps_cmd = f'post meta get {shlex.quote(str(source_course_id))} ld_course_steps'
+                steps_data = self.cli.execute(steps_cmd, format=None)
+                if steps_data:
+                    # Update course_id in the steps data
+                    steps_data = steps_data.replace(
+                        f'"course_id";i:{source_course_id}',
+                        f'"course_id";i:{new_course_id}'
+                    )
+                    self.cli.execute(
+                        f'post meta update {shlex.quote(str(new_course_id))} '
+                        f'ld_course_steps {shlex.quote(steps_data)}'
+                    )
+            except Exception as e:
+                self.logger.warning(f"Failed to copy course steps: {e}")
+
+        self.logger.info(f"Duplicated course {source_course_id} to {new_course_id}")
+
+        return {
+            "source_course_id": source_course_id,
+            "new_course_id": new_course_id,
+            "new_title": new_title,
+            "new_slug": new_slug,
+            "status": "draft"
+        }
+
+    def set_course_steps(
+        self,
+        course_id: int,
+        lesson_ids: list[int],
+        enable_shared_steps: bool = True
+    ) -> dict:
+        """
+        Set the course builder structure with specified lessons.
+
+        Args:
+            course_id: Course post ID
+            lesson_ids: List of lesson IDs to include in order
+            enable_shared_steps: Whether to enable shared steps feature
+
+        Returns:
+            Dict with update status
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        course_id = self._validate_positive_int(course_id, "course_id")
+
+        if not isinstance(lesson_ids, list) or len(lesson_ids) == 0:
+            raise ValueError("lesson_ids must be a non-empty list")
+
+        validated_lessons = [
+            self._validate_positive_int(lid, f"lesson_ids[{i}]")
+            for i, lid in enumerate(lesson_ids)
+        ]
+
+        lesson_ids_php = "array(" + ",".join(map(str, validated_lessons)) + ")"
+        shared_steps_php = "true" if enable_shared_steps else "false"
+
+        php_code = f'''
+$course_id = {course_id};
+$lesson_ids = {lesson_ids_php};
+$enable_shared_steps = {shared_steps_php};
+
+// Build the steps structure
+$lessons_array = array();
+foreach ($lesson_ids as $lesson_id) {{
+    $lessons_array[$lesson_id] = array(
+        "sfwd-topic" => array(),
+        "sfwd-quiz" => array()
+    );
+}}
+
+$steps = array(
+    "steps" => array(
+        "h" => array(
+            "sfwd-lessons" => $lessons_array,
+            "sfwd-quiz" => array()
+        )
+    ),
+    "course_id" => $course_id,
+    "version" => "4.25.6",
+    "empty" => false,
+    "course_builder_enabled" => true,
+    "course_shared_steps_enabled" => $enable_shared_steps,
+    "steps_count" => count($lesson_ids)
+);
+
+update_post_meta($course_id, "ld_course_steps", $steps);
+update_post_meta($course_id, "_ld_course_steps_count", count($lesson_ids));
+
+echo json_encode(array(
+    "success" => true,
+    "course_id" => $course_id,
+    "lesson_count" => count($lesson_ids),
+    "shared_steps_enabled" => $enable_shared_steps
+));
+'''
+        cmd = f'eval {shlex.quote(php_code)}'
+        result = self.cli.execute(cmd, format=None)
+
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return {"success": False, "error": result}

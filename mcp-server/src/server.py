@@ -392,6 +392,167 @@ async def list_tools() -> list[Tool]:
                 "required": ["title"],
             },
         ),
+        Tool(
+            name="ld_set_group_leader",
+            description="Assign a user as group leader",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "number", "description": "WordPress user ID"},
+                    "group_id": {"type": "number", "description": "Group ID"},
+                },
+                "required": ["user_id", "group_id"],
+            },
+        ),
+        # Topics
+        Tool(
+            name="ld_create_topic",
+            description="Create a new topic under a lesson",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lesson_id": {"type": "number", "description": "Parent lesson ID"},
+                    "title": {"type": "string", "description": "Topic title"},
+                    "content": {"type": "string", "description": "Topic content"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["publish", "draft"],
+                        "default": "draft",
+                    },
+                    "order": {"type": "number", "description": "Topic order (optional)"},
+                },
+                "required": ["lesson_id", "title"],
+            },
+        ),
+        Tool(
+            name="ld_list_lesson_topics",
+            description="List all topics for a lesson",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lesson_id": {"type": "number", "description": "Lesson ID"},
+                },
+                "required": ["lesson_id"],
+            },
+        ),
+        # Analytics & Progress
+        Tool(
+            name="ld_get_user_progress",
+            description="Get detailed progress for a user in a course",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "number", "description": "WordPress user ID"},
+                    "course_id": {"type": "number", "description": "Course ID"},
+                },
+                "required": ["user_id", "course_id"],
+            },
+        ),
+        Tool(
+            name="ld_get_course_completion_rate",
+            description="Get completion statistics for a course",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "number", "description": "Course ID"},
+                },
+                "required": ["course_id"],
+            },
+        ),
+        Tool(
+            name="ld_get_group_progress",
+            description="Get group-wide progress statistics",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "group_id": {"type": "number", "description": "Group ID"},
+                },
+                "required": ["group_id"],
+            },
+        ),
+        # Bulk Operations
+        Tool(
+            name="ld_bulk_enroll_users",
+            description="Enroll multiple users in a course at once",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of WordPress user IDs",
+                    },
+                    "course_id": {"type": "number", "description": "Course ID"},
+                },
+                "required": ["user_ids", "course_id"],
+            },
+        ),
+        Tool(
+            name="ld_bulk_add_to_group",
+            description="Add multiple users to a group at once",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of WordPress user IDs",
+                    },
+                    "group_id": {"type": "number", "description": "Group ID"},
+                },
+                "required": ["user_ids", "group_id"],
+            },
+        ),
+        # Quiz Statistics
+        Tool(
+            name="ld_get_quiz_statistics",
+            description="Get quiz performance statistics",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "quiz_id": {"type": "number", "description": "Quiz ID"},
+                },
+                "required": ["quiz_id"],
+            },
+        ),
+        # Certificates
+        Tool(
+            name="ld_list_certificates",
+            description="List all certificate templates",
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
+        Tool(
+            name="ld_get_user_certificates",
+            description="Get all certificates earned by a user",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "user_id": {"type": "number", "description": "WordPress user ID"},
+                },
+                "required": ["user_id"],
+            },
+        ),
+        # Reporting
+        Tool(
+            name="ld_export_completion_report",
+            description="Generate a compliance/completion report for a course",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "number", "description": "Course ID"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["json", "csv"],
+                        "default": "json",
+                        "description": "Output format",
+                    },
+                },
+                "required": ["course_id"],
+            },
+        ),
         # WooCommerce Product Management
         Tool(
             name="wc_create_product",
@@ -754,6 +915,91 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 title=arguments["title"],
                 description=arguments.get("description", ""),
                 course_ids=arguments.get("course_ids"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_set_group_leader":
+            result = ld.set_group_leader(
+                user_id=arguments["user_id"],
+                group_id=arguments["group_id"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Topics
+        elif name == "ld_create_topic":
+            result = ld.create_topic(
+                lesson_id=arguments["lesson_id"],
+                title=arguments["title"],
+                content=arguments.get("content", ""),
+                status=arguments.get("status", "draft"),
+                order=arguments.get("order"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_list_lesson_topics":
+            topics = ld.list_lesson_topics(
+                lesson_id=arguments["lesson_id"]
+            )
+            return [TextContent(type="text", text=str(topics))]
+
+        # Analytics & Progress
+        elif name == "ld_get_user_progress":
+            result = ld.get_user_progress(
+                user_id=arguments["user_id"],
+                course_id=arguments["course_id"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_get_course_completion_rate":
+            result = ld.get_course_completion_rate(
+                course_id=arguments["course_id"]
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_get_group_progress":
+            result = ld.get_group_progress(
+                group_id=arguments["group_id"]
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Bulk Operations
+        elif name == "ld_bulk_enroll_users":
+            result = ld.bulk_enroll_users(
+                user_ids=arguments["user_ids"],
+                course_id=arguments["course_id"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_bulk_add_to_group":
+            result = ld.bulk_add_to_group(
+                user_ids=arguments["user_ids"],
+                group_id=arguments["group_id"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Quiz Statistics
+        elif name == "ld_get_quiz_statistics":
+            result = ld.get_quiz_statistics(
+                quiz_id=arguments["quiz_id"]
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Certificates
+        elif name == "ld_list_certificates":
+            certificates = ld.list_certificates()
+            return [TextContent(type="text", text=str(certificates))]
+
+        elif name == "ld_get_user_certificates":
+            result = ld.get_user_certificates(
+                user_id=arguments["user_id"]
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Reporting
+        elif name == "ld_export_completion_report":
+            result = ld.export_completion_report(
+                course_id=arguments["course_id"],
+                format=arguments.get("format", "json"),
             )
             return [TextContent(type="text", text=str(result))]
 

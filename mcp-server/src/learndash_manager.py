@@ -145,6 +145,24 @@ class LearnDashManager:
 
         return value
 
+    def _get_meta(self, post_id: int, meta_key: str) -> Optional[str]:
+        """
+        Get post meta value.
+
+        Args:
+            post_id: Post ID
+            meta_key: Meta key to retrieve
+
+        Returns:
+            Meta value or None if not found
+        """
+        try:
+            cmd = f'post meta get {post_id} {meta_key}'
+            result = self.cli.execute(cmd)
+            return result if result else None
+        except Exception:
+            return None
+
     # ==================== COURSE MANAGEMENT ====================
 
     def create_course(
@@ -1007,7 +1025,7 @@ class LearnDashManager:
 
         self.logger.info(f"Updated topic {topic_id}")
 
-        return {"success": True, "id": topic_id, "action": "updated", "data": {"updated": True}}
+        return {"id": topic_id, "updated": True}
 
     # ==================== QUIZ MODIFICATION ====================
 
@@ -1117,11 +1135,28 @@ class LearnDashManager:
         if not lesson_order:
             raise ValueError("lesson_order cannot be empty")
 
+        # Check for duplicate IDs
+        if len(lesson_order) != len(set(lesson_order)):
+            raise ValueError("lesson_order contains duplicate IDs. Each lesson can only appear once.")
+
         # Validate each lesson ID
         validated_lessons = [
             self._validate_positive_int(lid, f"lesson_order[{i}]")
             for i, lid in enumerate(lesson_order)
         ]
+
+        # Verify all lessons belong to the specified course
+        self.logger.info(f"Verifying all {len(validated_lessons)} lessons belong to course {course_id}")
+        for lesson_id in validated_lessons:
+            try:
+                lesson_course_id = self._get_meta(lesson_id, 'course_id')
+                if lesson_course_id and int(lesson_course_id) != course_id:
+                    raise ValueError(
+                        f"Lesson {lesson_id} belongs to course {lesson_course_id}, not course {course_id}. "
+                        f"Cannot reorder lessons from different courses."
+                    )
+            except Exception as e:
+                raise ValueError(f"Could not verify ownership of lesson {lesson_id}: {e}")
 
         # Update menu_order for each lesson
         for index, lesson_id in enumerate(validated_lessons):
@@ -1169,11 +1204,28 @@ class LearnDashManager:
         if not topic_order:
             raise ValueError("topic_order cannot be empty")
 
+        # Check for duplicate IDs
+        if len(topic_order) != len(set(topic_order)):
+            raise ValueError("topic_order contains duplicate IDs. Each topic can only appear once.")
+
         # Validate each topic ID
         validated_topics = [
             self._validate_positive_int(tid, f"topic_order[{i}]")
             for i, tid in enumerate(topic_order)
         ]
+
+        # Verify all topics belong to the specified lesson
+        self.logger.info(f"Verifying all {len(validated_topics)} topics belong to lesson {lesson_id}")
+        for topic_id in validated_topics:
+            try:
+                topic_lesson_id = self._get_meta(topic_id, 'lesson_id')
+                if topic_lesson_id and int(topic_lesson_id) != lesson_id:
+                    raise ValueError(
+                        f"Topic {topic_id} belongs to lesson {topic_lesson_id}, not lesson {lesson_id}. "
+                        f"Cannot reorder topics from different lessons."
+                    )
+            except Exception as e:
+                raise ValueError(f"Could not verify ownership of topic {topic_id}: {e}")
 
         # Update menu_order for each topic
         for index, topic_id in enumerate(validated_topics):
@@ -1396,7 +1448,11 @@ class LearnDashManager:
             "successful": 0,
             "failed": 0,
             "details": [],
+            "aborted": False,
         }
+
+        consecutive_failures = 0
+        MAX_CONSECUTIVE_FAILURES = 5
 
         for i, update_dict in enumerate(updates):
             try:
@@ -1421,6 +1477,7 @@ class LearnDashManager:
                     "status": "success",
                     "result": result,
                 })
+                consecutive_failures = 0  # Reset on success
 
             except Exception as e:
                 self.logger.error(f"Failed to update lesson in batch (index {i}): {e}")
@@ -1430,6 +1487,22 @@ class LearnDashManager:
                     "status": "failed",
                     "error": str(e),
                 })
+                consecutive_failures += 1
+
+                # Circuit breaker: abort if too many consecutive failures
+                if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                    self.logger.error(
+                        f"Aborting batch update after {MAX_CONSECUTIVE_FAILURES} consecutive failures"
+                    )
+                    results["aborted"] = True
+                    # Mark remaining lessons as not attempted
+                    for remaining_update in updates[i+1:]:
+                        results["details"].append({
+                            "lesson_id": remaining_update.get("lesson_id"),
+                            "status": "not_attempted",
+                            "error": "Batch operation aborted due to consecutive failures"
+                        })
+                    break
 
         self.logger.info(
             f"Batch update completed: {results['successful']} successful, "
@@ -1455,10 +1528,25 @@ class LearnDashManager:
 
         Args:
             lesson_id: Lesson post ID
-            prerequisite_lesson_ids: List of lesson IDs that must be completed first
+            prerequisite_lesson_ids: List of prerequisite lesson IDs (empty to clear)
 
         Returns:
-            Prerequisites confirmation
+            Update confirmation
+
+        Note:
+            This currently uses comma-separated format for multiple prerequisites.
+            If this doesn't work with LearnDash in production, it may need to be
+            updated to use PHP serialized array format.
+
+        Example:
+            # Single prerequisite
+            set_lesson_prerequisites(lesson_id=2, prerequisite_lesson_ids=[1])
+
+            # Multiple prerequisites
+            set_lesson_prerequisites(lesson_id=3, prerequisite_lesson_ids=[1, 2])
+
+            # Clear prerequisites
+            set_lesson_prerequisites(lesson_id=3, prerequisite_lesson_ids=[])
 
         Raises:
             ValueError: If input validation fails
@@ -1527,33 +1615,36 @@ class LearnDashManager:
         """
         Update the entire course structure in one call.
 
+        IMPORTANT: This is a custom implementation that stores structure in a
+        custom meta field (ld_course_builder). It may not integrate with LearnDash's
+        native course builder UI. Use for custom course management workflows.
+
+        For native LearnDash integration, consider using individual lesson operations
+        (create_lesson, reorder_lessons, etc.) which are guaranteed to work with
+        LearnDash's course builder.
+
         Args:
             course_id: Course post ID
-            structure: Dict defining the course structure:
+            structure: Dict defining the course structure with sections and lessons
+
+        Returns:
+            Update confirmation with lesson count
+
+        Example structure:
             {
                 "sections": [
                     {
                         "heading": "Module 1: Introduction",
                         "lessons": [
-                            {"lesson_id": 123, "order": 1},
-                            {"lesson_id": 456, "order": 2},
+                            {"lesson_id": 123, "order": 0},
+                            {"lesson_id": 456, "order": 1},
                         ]
-                    },
-                    {
-                        "heading": "Module 2: Advanced",
-                        "lessons": [...]
                     }
                 ]
             }
 
-        Returns:
-            Structure update confirmation
-
         Raises:
             ValueError: If input validation fails
-
-        Note:
-            This uses LearnDash's course builder data structure.
         """
         # Validate inputs
         course_id = self._validate_positive_int(course_id, "course_id")

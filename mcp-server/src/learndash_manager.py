@@ -1,6 +1,8 @@
 """LearnDash LMS management for course creation and editing."""
 
-from typing import Optional, Literal
+import shlex
+import logging
+from typing import Optional, Literal, Union, Any
 from .config import WordPressConfig
 from .wp_cli import WPCLIClient
 
@@ -11,6 +13,137 @@ class LearnDashManager:
     def __init__(self, config: WordPressConfig, wp_cli: WPCLIClient):
         self.config = config
         self.cli = wp_cli
+        self.logger = logging.getLogger(__name__)
+
+    # ==================== VALIDATION HELPERS ====================
+
+    def _validate_positive_int(self, value: Any, name: str) -> int:
+        """
+        Validate and return positive integer.
+
+        Args:
+            value: Value to validate
+            name: Parameter name for error messages
+
+        Returns:
+            Validated integer
+
+        Raises:
+            ValueError: If value is not a positive integer
+        """
+        if not isinstance(value, int) or value <= 0:
+            raise ValueError(f"{name} must be a positive integer, got {value}")
+        return value
+
+    def _validate_string(
+        self,
+        value: Any,
+        name: str,
+        max_length: Optional[int] = None,
+        allow_empty: bool = False,
+    ) -> str:
+        """
+        Validate and return string.
+
+        Args:
+            value: Value to validate
+            name: Parameter name for error messages
+            max_length: Maximum allowed length (optional)
+            allow_empty: Whether empty strings are allowed
+
+        Returns:
+            Validated string
+
+        Raises:
+            ValueError: If validation fails
+        """
+        if not isinstance(value, str):
+            raise ValueError(f"{name} must be a string, got {type(value).__name__}")
+
+        if not allow_empty and not value.strip():
+            raise ValueError(f"{name} cannot be empty")
+
+        if max_length and len(value) > max_length:
+            raise ValueError(
+                f"{name} too long (max {max_length} chars, got {len(value)})"
+            )
+
+        return value
+
+    def _validate_literal(
+        self, value: Any, name: str, allowed_values: list[str]
+    ) -> str:
+        """
+        Validate that value is one of allowed literal values.
+
+        Args:
+            value: Value to validate
+            name: Parameter name for error messages
+            allowed_values: List of allowed values
+
+        Returns:
+            Validated value
+
+        Raises:
+            ValueError: If value not in allowed values
+        """
+        if value not in allowed_values:
+            raise ValueError(
+                f"{name} must be one of {allowed_values}, got {value}"
+            )
+        return value
+
+    def _validate_float(self, value: Any, name: str, min_value: float = 0.0) -> float:
+        """
+        Validate and return float.
+
+        Args:
+            value: Value to validate
+            name: Parameter name for error messages
+            min_value: Minimum allowed value
+
+        Returns:
+            Validated float
+
+        Raises:
+            ValueError: If validation fails
+        """
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"{name} must be a number, got {type(value).__name__}")
+
+        value = float(value)
+        if value < min_value:
+            raise ValueError(f"{name} must be >= {min_value}, got {value}")
+
+        return value
+
+    def _validate_int_range(
+        self, value: Any, name: str, min_value: int, max_value: int
+    ) -> int:
+        """
+        Validate integer is within range.
+
+        Args:
+            value: Value to validate
+            name: Parameter name for error messages
+            min_value: Minimum allowed value
+            max_value: Maximum allowed value
+
+        Returns:
+            Validated integer
+
+        Raises:
+            ValueError: If validation fails
+        """
+        if not isinstance(value, int):
+            raise ValueError(f"{name} must be an integer, got {type(value).__name__}")
+
+        if value < min_value or value > max_value:
+            raise ValueError(
+                f"{name} must be between {min_value} and {max_value}, got {value}"
+            )
+
+        return value
 
     # ==================== COURSE MANAGEMENT ====================
 
@@ -34,12 +167,27 @@ class LearnDashManager:
 
         Returns:
             Created course data with ID
+
+        Raises:
+            ValueError: If input validation fails
         """
-        # Create course post
-        cmd = f'post create --post_type=sfwd-courses --post_title="{title}" --post_status={status}'
+        # Validate inputs
+        title = self._validate_string(title, "title", max_length=200)
+        if content:
+            content = self._validate_string(
+                content, "content", max_length=50000, allow_empty=True
+            )
+        status = self._validate_literal(status, "status", ["publish", "draft", "private"])
+        if price is not None:
+            price = self._validate_float(price, "price", min_value=0.0)
+        if certificate_id is not None:
+            certificate_id = self._validate_positive_int(certificate_id, "certificate_id")
+
+        # Create course post with properly escaped values
+        cmd = f'post create --post_type=sfwd-courses --post_title={shlex.quote(title)} --post_status={status}'
 
         if content:
-            cmd += f' --post_content="{content}"'
+            cmd += f' --post_content={shlex.quote(content)}'
 
         result = self.cli.execute(cmd, format="json")
         course_id = result if isinstance(result, int) else int(result)
@@ -54,6 +202,8 @@ class LearnDashManager:
             self.cli.execute(
                 f'post meta update {course_id} _sfwd-courses "_sfwd-courses[sfwd-courses_certificate]" {certificate_id}'
             )
+
+        self.logger.info(f"Created course {course_id}: {title}")
 
         return {
             "id": course_id,
@@ -83,13 +233,31 @@ class LearnDashManager:
 
         Returns:
             Updated course data
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+        if title is not None:
+            title = self._validate_string(title, "title", max_length=200)
+        if content is not None:
+            content = self._validate_string(
+                content, "content", max_length=50000, allow_empty=True
+            )
+        if status is not None:
+            status = self._validate_literal(
+                status, "status", ["publish", "draft", "private"]
+            )
+        if price is not None:
+            price = self._validate_float(price, "price", min_value=0.0)
+
         updates = []
 
         if title:
-            updates.append(f'--post_title="{title}"')
-        if content:
-            updates.append(f'--post_content="{content}"')
+            updates.append(f'--post_title={shlex.quote(title)}')
+        if content is not None:
+            updates.append(f'--post_content={shlex.quote(content)}')
         if status:
             updates.append(f'--post_status={status}')
 
@@ -101,6 +269,8 @@ class LearnDashManager:
             self.cli.execute(
                 f'post meta update {course_id} _sfwd-courses "_sfwd-courses[sfwd-courses_course_price]" {price}'
             )
+
+        self.logger.info(f"Updated course {course_id}")
 
         return {"id": course_id, "updated": True}
 
@@ -131,12 +301,19 @@ class LearnDashManager:
 
         Returns:
             Deletion confirmation
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         cmd = f'post delete {course_id}'
         if force:
             cmd += ' --force'
 
         self.cli.execute(cmd)
+        self.logger.info(f"Deleted course {course_id} (force={force})")
         return {"id": course_id, "deleted": True, "permanent": force}
 
     # ==================== LESSON MANAGEMENT ====================
@@ -161,11 +338,25 @@ class LearnDashManager:
 
         Returns:
             Created lesson data
+
+        Raises:
+            ValueError: If input validation fails
         """
-        cmd = f'post create --post_type=sfwd-lessons --post_title="{title}" --post_status={status}'
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+        title = self._validate_string(title, "title", max_length=200)
+        if content:
+            content = self._validate_string(
+                content, "content", max_length=50000, allow_empty=True
+            )
+        status = self._validate_literal(status, "status", ["publish", "draft"])
+        if order is not None:
+            order = self._validate_positive_int(order, "order")
+
+        cmd = f'post create --post_type=sfwd-lessons --post_title={shlex.quote(title)} --post_status={status}'
 
         if content:
-            cmd += f' --post_content="{content}"'
+            cmd += f' --post_content={shlex.quote(content)}'
 
         result = self.cli.execute(cmd, format="json")
         lesson_id = result if isinstance(result, int) else int(result)
@@ -184,6 +375,8 @@ class LearnDashManager:
                 f'post meta update {lesson_id} lesson_order {order}'
             )
 
+        self.logger.info(f"Created lesson {lesson_id}: {title} for course {course_id}")
+
         return {
             "id": lesson_id,
             "title": title,
@@ -199,13 +392,38 @@ class LearnDashManager:
         content: Optional[str] = None,
         order: Optional[int] = None,
     ) -> dict:
-        """Update lesson details."""
+        """
+        Update lesson details.
+
+        Args:
+            lesson_id: Lesson post ID
+            title: New title (optional)
+            content: New content (optional)
+            order: New order (optional)
+
+        Returns:
+            Updated lesson data
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+        if title is not None:
+            title = self._validate_string(title, "title", max_length=200)
+        if content is not None:
+            content = self._validate_string(
+                content, "content", max_length=50000, allow_empty=True
+            )
+        if order is not None:
+            order = self._validate_positive_int(order, "order")
+
         updates = []
 
         if title:
-            updates.append(f'--post_title="{title}"')
-        if content:
-            updates.append(f'--post_content="{content}"')
+            updates.append(f'--post_title={shlex.quote(title)}')
+        if content is not None:
+            updates.append(f'--post_content={shlex.quote(content)}')
 
         if updates:
             cmd = f'post update {lesson_id} {" ".join(updates)}'
@@ -214,10 +432,26 @@ class LearnDashManager:
         if order is not None:
             self.cli.execute(f'post meta update {lesson_id} lesson_order {order}')
 
+        self.logger.info(f"Updated lesson {lesson_id}")
+
         return {"id": lesson_id, "updated": True}
 
     def list_course_lessons(self, course_id: int) -> list[dict]:
-        """Get all lessons for a course."""
+        """
+        Get all lessons for a course.
+
+        Args:
+            course_id: Course post ID
+
+        Returns:
+            List of lessons
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         cmd = f'post list --post_type=sfwd-lessons --meta_key=course_id --meta_value={course_id} --orderby=menu_order --order=ASC'
         return self.cli.execute(cmd, format="json")
 
@@ -245,11 +479,29 @@ class LearnDashManager:
 
         Returns:
             Created quiz data
+
+        Raises:
+            ValueError: If input validation fails
         """
-        cmd = f'post create --post_type=sfwd-quiz --post_title="{title}" --post_status=publish'
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+        if lesson_id is not None:
+            lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+        title = self._validate_string(title, "title", max_length=200)
+        if description:
+            description = self._validate_string(
+                description, "description", max_length=50000, allow_empty=True
+            )
+        passing_score = self._validate_int_range(
+            passing_score, "passing_score", 0, 100
+        )
+        if certificate_id is not None:
+            certificate_id = self._validate_positive_int(certificate_id, "certificate_id")
+
+        cmd = f'post create --post_type=sfwd-quiz --post_title={shlex.quote(title)} --post_status=publish'
 
         if description:
-            cmd += f' --post_content="{description}"'
+            cmd += f' --post_content={shlex.quote(description)}'
 
         result = self.cli.execute(cmd, format="json")
         quiz_id = result if isinstance(result, int) else int(result)
@@ -269,6 +521,8 @@ class LearnDashManager:
             self.cli.execute(
                 f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_certificate]" {certificate_id}'
             )
+
+        self.logger.info(f"Created quiz {quiz_id}: {title} for course {course_id}")
 
         return {
             "id": quiz_id,
@@ -300,13 +554,26 @@ class LearnDashManager:
         Returns:
             Created question data
 
+        Raises:
+            ValueError: If input validation fails
+
         Example answers:
             [
                 {"text": "Answer 1", "correct": True},
                 {"text": "Answer 2", "correct": False},
             ]
         """
-        cmd = f'post create --post_type=sfwd-question --post_title="{question_text}" --post_status=publish'
+        # Validate inputs
+        quiz_id = self._validate_positive_int(quiz_id, "quiz_id")
+        question_text = self._validate_string(question_text, "question_text", max_length=1000)
+        question_type = self._validate_literal(
+            question_type,
+            "question_type",
+            ["single", "multiple", "free_answer", "essay"]
+        )
+        points = self._validate_positive_int(points, "points")
+
+        cmd = f'post create --post_type=sfwd-question --post_title={shlex.quote(question_text)} --post_status=publish'
 
         result = self.cli.execute(cmd, format="json")
         question_id = result if isinstance(result, int) else int(result)
@@ -334,6 +601,8 @@ class LearnDashManager:
             # For production, you'd need to properly serialize answer data
             pass
 
+        self.logger.info(f"Added question {question_id} to quiz {quiz_id}")
+
         return {
             "id": question_id,
             "quiz_id": quiz_id,
@@ -354,7 +623,14 @@ class LearnDashManager:
 
         Returns:
             Enrollment confirmation
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         # LearnDash stores enrollments in user meta
         self.cli.execute(
             f'user meta add {user_id} course_enrolled_{course_id} {course_id}'
@@ -363,6 +639,8 @@ class LearnDashManager:
         # Also update course user list
         cmd = f'post meta add {course_id} learndash_course_users {user_id}'
         self.cli.execute(cmd)
+
+        self.logger.info(f"Enrolled user {user_id} in course {course_id}")
 
         return {
             "user_id": user_id,
@@ -380,13 +658,22 @@ class LearnDashManager:
 
         Returns:
             Unenrollment confirmation
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         self.cli.execute(
             f'user meta delete {user_id} course_enrolled_{course_id}'
         )
         self.cli.execute(
             f'post meta delete {course_id} learndash_course_users {user_id}'
         )
+
+        self.logger.info(f"Unenrolled user {user_id} from course {course_id}")
 
         return {
             "user_id": user_id,
@@ -403,7 +690,13 @@ class LearnDashManager:
 
         Returns:
             List of enrolled courses
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+
         # Get all user meta keys starting with course_enrolled_
         cmd = f'user meta list {user_id} --fields=meta_key,meta_value'
         meta = self.cli.execute(cmd, format="json")
@@ -430,7 +723,13 @@ class LearnDashManager:
 
         Returns:
             List of enrolled users
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         cmd = f'post meta get {course_id} learndash_course_users'
         user_ids = self.cli.execute(cmd)
 
@@ -456,11 +755,27 @@ class LearnDashManager:
 
         Returns:
             Created group data
+
+        Raises:
+            ValueError: If input validation fails
         """
-        cmd = f'post create --post_type=groups --post_title="{title}" --post_status=publish'
+        # Validate inputs
+        title = self._validate_string(title, "title", max_length=200)
+        if description:
+            description = self._validate_string(
+                description, "description", max_length=50000, allow_empty=True
+            )
+        if course_ids:
+            # Validate each course ID
+            course_ids = [
+                self._validate_positive_int(cid, f"course_ids[{i}]")
+                for i, cid in enumerate(course_ids)
+            ]
+
+        cmd = f'post create --post_type=groups --post_title={shlex.quote(title)} --post_status=publish'
 
         if description:
-            cmd += f' --post_content="{description}"'
+            cmd += f' --post_content={shlex.quote(description)}'
 
         result = self.cli.execute(cmd, format="json")
         group_id = result if isinstance(result, int) else int(result)
@@ -472,6 +787,8 @@ class LearnDashManager:
                     f'post meta add {group_id} learndash_group_enrolled_{course_id} {course_id}'
                 )
 
+        self.logger.info(f"Created group {group_id}: {title}")
+
         return {
             "id": group_id,
             "title": title,
@@ -480,13 +797,31 @@ class LearnDashManager:
         }
 
     def add_user_to_group(self, user_id: int, group_id: int) -> dict:
-        """Add user to a LearnDash group."""
+        """
+        Add user to a LearnDash group.
+
+        Args:
+            user_id: WordPress user ID
+            group_id: Group post ID
+
+        Returns:
+            Group addition confirmation
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+        group_id = self._validate_positive_int(group_id, "group_id")
+
         self.cli.execute(
             f'user meta add {user_id} learndash_group_users_{group_id} {group_id}'
         )
         self.cli.execute(
             f'post meta add {group_id} learndash_group_users {user_id}'
         )
+
+        self.logger.info(f"Added user {user_id} to group {group_id}")
 
         return {"user_id": user_id, "group_id": group_id, "added": True}
 
@@ -500,7 +835,14 @@ class LearnDashManager:
 
         Returns:
             Group leader assignment confirmation
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+        group_id = self._validate_positive_int(group_id, "group_id")
+
         # Add group leader meta
         self.cli.execute(
             f'post meta add {group_id} learndash_group_leaders {user_id}'
@@ -508,6 +850,8 @@ class LearnDashManager:
         self.cli.execute(
             f'user meta add {user_id} learndash_group_leaders_{group_id} {group_id}'
         )
+
+        self.logger.info(f"Set user {user_id} as leader of group {group_id}")
 
         return {
             "user_id": user_id,
@@ -538,11 +882,25 @@ class LearnDashManager:
 
         Returns:
             Created topic data
+
+        Raises:
+            ValueError: If input validation fails
         """
-        cmd = f'post create --post_type=sfwd-topic --post_title="{title}" --post_status={status}'
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+        title = self._validate_string(title, "title", max_length=200)
+        if content:
+            content = self._validate_string(
+                content, "content", max_length=50000, allow_empty=True
+            )
+        status = self._validate_literal(status, "status", ["publish", "draft"])
+        if order is not None:
+            order = self._validate_positive_int(order, "order")
+
+        cmd = f'post create --post_type=sfwd-topic --post_title={shlex.quote(title)} --post_status={status}'
 
         if content:
-            cmd += f' --post_content="{content}"'
+            cmd += f' --post_content={shlex.quote(content)}'
 
         result = self.cli.execute(cmd, format="json")
         topic_id = result if isinstance(result, int) else int(result)
@@ -564,6 +922,8 @@ class LearnDashManager:
         if order is not None:
             self.cli.execute(f'post meta update {topic_id} topic_order {order}')
 
+        self.logger.info(f"Created topic {topic_id}: {title} for lesson {lesson_id}")
+
         return {
             "id": topic_id,
             "title": title,
@@ -582,7 +942,13 @@ class LearnDashManager:
 
         Returns:
             List of topics
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+
         cmd = f'post list --post_type=sfwd-topic --meta_key=lesson_id --meta_value={lesson_id} --orderby=menu_order --order=ASC'
         return self.cli.execute(cmd, format="json")
 
@@ -598,7 +964,14 @@ class LearnDashManager:
 
         Returns:
             Detailed progress data including lessons, topics, quizzes
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         # Get user course progress meta
         cmd = f'user meta get {user_id} course_progress_{course_id}'
         progress_data = self.cli.execute(cmd)
@@ -645,7 +1018,13 @@ class LearnDashManager:
 
         Returns:
             Course completion statistics
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+
         # Get all enrolled users
         cmd = f'post meta get {course_id} learndash_course_users'
         enrolled_users_data = self.cli.execute(cmd)
@@ -673,7 +1052,13 @@ class LearnDashManager:
 
         Returns:
             Group progress data for all members
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        group_id = self._validate_positive_int(group_id, "group_id")
+
         # Get group users
         cmd = f'post meta get {group_id} learndash_group_users'
         group_users_data = self.cli.execute(cmd)
@@ -706,28 +1091,78 @@ class LearnDashManager:
             course_id: Course post ID
 
         Returns:
-            Bulk enrollment results
+            Bulk enrollment results with circuit breaker protection
+
+        Raises:
+            ValueError: If input validation fails
         """
-        results = []
-        successful = 0
-        failed = 0
+        # Validate course_id upfront
+        course_id = self._validate_positive_int(course_id, "course_id")
 
-        for user_id in user_ids:
-            try:
-                self.enroll_user(user_id, course_id)
-                results.append({"user_id": user_id, "status": "enrolled"})
-                successful += 1
-            except Exception as e:
-                results.append({"user_id": user_id, "status": "failed", "error": str(e)})
-                failed += 1
+        # Validate user_ids list
+        if not isinstance(user_ids, list):
+            raise ValueError("user_ids must be a list")
+        if not user_ids:
+            raise ValueError("user_ids cannot be empty")
 
-        return {
+        results = {
             "course_id": course_id,
             "total_users": len(user_ids),
-            "successful": successful,
-            "failed": failed,
-            "results": results,
+            "enrolled": 0,
+            "failed": 0,
+            "errors": [],
+            "aborted": False,
         }
+
+        consecutive_failures = 0
+        MAX_CONSECUTIVE_FAILURES = 5
+
+        for i, user_id in enumerate(user_ids):
+            try:
+                # Validate this user_id
+                user_id = self._validate_positive_int(user_id, f"user_ids[{i}]")
+
+                # Attempt enrollment
+                result = self.enroll_user(user_id, course_id)
+                if result.get("enrolled"):
+                    results["enrolled"] += 1
+                    consecutive_failures = 0
+                else:
+                    results["failed"] += 1
+                    results["errors"].append({
+                        "user_id": user_id,
+                        "error": result.get("error", "Unknown error")
+                    })
+                    consecutive_failures += 1
+
+            except ValueError as e:
+                # Validation error
+                self.logger.error(f"Validation error for user {user_id}: {e}")
+                results["failed"] += 1
+                results["errors"].append({"user_id": user_id, "error": str(e)})
+                consecutive_failures += 1
+
+            except Exception as e:
+                # Other errors
+                self.logger.error(f"Failed to enroll user {user_id}: {e}")
+                results["failed"] += 1
+                results["errors"].append({"user_id": user_id, "error": str(e)})
+                consecutive_failures += 1
+
+            # Circuit breaker: abort if too many consecutive failures
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                self.logger.error(
+                    f"Aborting bulk enrollment after {MAX_CONSECUTIVE_FAILURES} consecutive failures"
+                )
+                results["aborted"] = True
+                break
+
+        self.logger.info(
+            f"Bulk enrollment completed: {results['enrolled']} enrolled, "
+            f"{results['failed']} failed, aborted={results['aborted']}"
+        )
+
+        return results
 
     def bulk_add_to_group(self, user_ids: list[int], group_id: int) -> dict:
         """
@@ -738,28 +1173,78 @@ class LearnDashManager:
             group_id: Group post ID
 
         Returns:
-            Bulk group addition results
+            Bulk group addition results with circuit breaker protection
+
+        Raises:
+            ValueError: If input validation fails
         """
-        results = []
-        successful = 0
-        failed = 0
+        # Validate group_id upfront
+        group_id = self._validate_positive_int(group_id, "group_id")
 
-        for user_id in user_ids:
-            try:
-                self.add_user_to_group(user_id, group_id)
-                results.append({"user_id": user_id, "status": "added"})
-                successful += 1
-            except Exception as e:
-                results.append({"user_id": user_id, "status": "failed", "error": str(e)})
-                failed += 1
+        # Validate user_ids list
+        if not isinstance(user_ids, list):
+            raise ValueError("user_ids must be a list")
+        if not user_ids:
+            raise ValueError("user_ids cannot be empty")
 
-        return {
+        results = {
             "group_id": group_id,
             "total_users": len(user_ids),
-            "successful": successful,
-            "failed": failed,
-            "results": results,
+            "added": 0,
+            "failed": 0,
+            "errors": [],
+            "aborted": False,
         }
+
+        consecutive_failures = 0
+        MAX_CONSECUTIVE_FAILURES = 5
+
+        for i, user_id in enumerate(user_ids):
+            try:
+                # Validate this user_id
+                user_id = self._validate_positive_int(user_id, f"user_ids[{i}]")
+
+                # Attempt to add to group
+                result = self.add_user_to_group(user_id, group_id)
+                if result.get("added"):
+                    results["added"] += 1
+                    consecutive_failures = 0
+                else:
+                    results["failed"] += 1
+                    results["errors"].append({
+                        "user_id": user_id,
+                        "error": result.get("error", "Unknown error")
+                    })
+                    consecutive_failures += 1
+
+            except ValueError as e:
+                # Validation error
+                self.logger.error(f"Validation error for user {user_id}: {e}")
+                results["failed"] += 1
+                results["errors"].append({"user_id": user_id, "error": str(e)})
+                consecutive_failures += 1
+
+            except Exception as e:
+                # Other errors
+                self.logger.error(f"Failed to add user {user_id} to group: {e}")
+                results["failed"] += 1
+                results["errors"].append({"user_id": user_id, "error": str(e)})
+                consecutive_failures += 1
+
+            # Circuit breaker: abort if too many consecutive failures
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                self.logger.error(
+                    f"Aborting bulk group addition after {MAX_CONSECUTIVE_FAILURES} consecutive failures"
+                )
+                results["aborted"] = True
+                break
+
+        self.logger.info(
+            f"Bulk group addition completed: {results['added']} added, "
+            f"{results['failed']} failed, aborted={results['aborted']}"
+        )
+
+        return results
 
     # ==================== QUIZ STATISTICS ====================
 
@@ -772,7 +1257,13 @@ class LearnDashManager:
 
         Returns:
             Quiz statistics including attempts, average score, pass rate
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        quiz_id = self._validate_positive_int(quiz_id, "quiz_id")
+
         # Get quiz meta
         cmd = f'post meta list {quiz_id} --fields=meta_key,meta_value'
         quiz_meta = self.cli.execute(cmd, format="json")
@@ -817,7 +1308,13 @@ class LearnDashManager:
 
         Returns:
             List of earned certificates with course/quiz associations
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        user_id = self._validate_positive_int(user_id, "user_id")
+
         # Get user meta for certificates
         cmd = f'user meta list {user_id} --fields=meta_key,meta_value'
         all_meta = self.cli.execute(cmd, format="json")
@@ -857,7 +1354,14 @@ class LearnDashManager:
 
         Returns:
             Completion report data
+
+        Raises:
+            ValueError: If input validation fails
         """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+        format = self._validate_literal(format, "format", ["json", "csv"])
+
         # Get all enrolled users
         cmd = f'post meta get {course_id} learndash_course_users'
         enrolled_users_data = self.cli.execute(cmd)

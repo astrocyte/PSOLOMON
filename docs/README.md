@@ -11,6 +11,13 @@ Complete documentation for the Predictive Safety Operations & Learning Managemen
   - Coupon management
   - API reference
 
+- **[LEARNDASH_ENHANCEMENTS.md](./LEARNDASH_ENHANCEMENTS.md)** - Complete LearnDash LMS documentation
+  - Course, lesson, topic, and quiz management
+  - Student enrollment and progress tracking
+  - Bulk operations and group analytics
+  - NYC DOB compliance reporting
+  - API reference and usage examples
+
 - **[CODE_REVIEW_AFFILIATE_ENHANCEMENTS.md](./CODE_REVIEW_AFFILIATE_ENHANCEMENTS.md)** - Security review
   - Code quality assessment
   - Security audit
@@ -39,6 +46,7 @@ Complete documentation for the Predictive Safety Operations & Learning Managemen
 ### For Daily Operations
 - Creating backups: See [MCP_BACKUP_USAGE.md](./MCP_BACKUP_USAGE.md)
 - Managing affiliates: See [AFFILIATE_ENHANCEMENTS.md](./AFFILIATE_ENHANCEMENTS.md)
+- Managing courses: See [LEARNDASH_ENHANCEMENTS.md](./LEARNDASH_ENHANCEMENTS.md)
 - Testing changes: See [TESTING_GUIDE.md](./TESTING_GUIDE.md)
 
 ### For Troubleshooting
@@ -66,6 +74,7 @@ Complete documentation for the Predictive Safety Operations & Learning Managemen
 - `ld_create_quiz` - Create quiz
 - `ld_enroll_user` - Enroll student
 - `ld_create_group` - Create group
+- See [LEARNDASH_ENHANCEMENTS.md](./LEARNDASH_ENHANCEMENTS.md) for complete reference
 
 ### WooCommerce
 - `wc_create_product` - Create product

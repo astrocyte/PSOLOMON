@@ -1,0 +1,16 @@
+README.md
+pyproject.toml
+src/__init__.py
+src/config.py
+src/image_optimizer.py
+src/learndash_manager.py
+src/seo_tools.py
+src/server.py
+src/woocommerce_manager.py
+src/wp_api.py
+src/wp_cli.py
+src/wordpress_mcp_server.egg-info/PKG-INFO
+src/wordpress_mcp_server.egg-info/SOURCES.txt
+src/wordpress_mcp_server.egg-info/dependency_links.txt
+src/wordpress_mcp_server.egg-info/requires.txt
+src/wordpress_mcp_server.egg-info/top_level.txt

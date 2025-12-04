@@ -1,0 +1,92 @@
+/* SST Affiliate Manager Admin Styles */
+
+.sst-affiliate-stat-box {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    box-shadow: 0 1px 1px rgba(0,0,0,.04);
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.sst-affiliate-stat-box h3 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.sst-affiliate-stat-box .stat-number {
+    font-size: 32px;
+    font-weight: 700;
+    color: #2271b1;
+}
+
+.sst-qr-code-preview {
+    border: 1px solid #ddd;
+    padding: 10px;
+    background: white;
+    display: inline-block;
+}
+
+.sst-referral-link-box {
+    background: #f0f0f1;
+    padding: 15px;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+.sst-referral-link-box input[type="text"] {
+    width: 100%;
+    font-family: monospace;
+    font-size: 13px;
+}
+
+/* Status badges */
+.sst-status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.sst-status-badge.pending {
+    background: #f0ad4e;
+    color: white;
+}
+
+.sst-status-badge.approved {
+    background: #5cb85c;
+    color: white;
+}
+
+.sst-status-badge.rejected {
+    background: #d9534f;
+    color: white;
+}
+
+/* Admin notices */
+.sst-admin-notice {
+    border-left: 4px solid #2271b1;
+    padding: 12px;
+    background: #f0f6fc;
+    margin: 20px 0;
+}
+
+.sst-admin-notice.warning {
+    border-left-color: #f0ad4e;
+    background: #fff8e1;
+}
+
+.sst-admin-notice.error {
+    border-left-color: #d9534f;
+    background: #ffebee;
+}
+
+/* Responsive table improvements */
+@media screen and (max-width: 782px) {
+    .wp-list-table .column-affiliate_id {
+        width: auto;
+    }
+}

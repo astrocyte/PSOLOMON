@@ -1,0 +1,49 @@
+# Environment & Credentials
+.env
+*.pem
+*.key
+
+# Backups (large files)
+backups/*
+!backups/.gitkeep
+*.tar.gz
+*.sql
+*.zip
+*.wpress
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+
+# MCP Server
+mcp-server/.venv/
+mcp-server/dist/
+mcp-server/build/
+mcp-server/*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# WordPress
+wp-config-local.php
+.htaccess.backup
+
+# Logs
+*.log
+logs/

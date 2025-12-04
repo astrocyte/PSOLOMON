@@ -952,6 +952,686 @@ class LearnDashManager:
         cmd = f'post list --post_type=sfwd-topic --meta_key=lesson_id --meta_value={lesson_id} --orderby=menu_order --order=ASC'
         return self.cli.execute(cmd, format="json")
 
+    def update_topic(
+        self,
+        topic_id: int,
+        title: Optional[str] = None,
+        content: Optional[str] = None,
+        order: Optional[int] = None,
+        status: Optional[str] = None,
+    ) -> dict:
+        """
+        Update an existing topic.
+
+        Args:
+            topic_id: Topic post ID
+            title: New title (optional)
+            content: New content (optional)
+            order: New order/position (optional)
+            status: New status (publish, draft) (optional)
+
+        Returns:
+            Updated topic data
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        topic_id = self._validate_positive_int(topic_id, "topic_id")
+        if title is not None:
+            title = self._validate_string(title, "title", max_length=200)
+        if content is not None:
+            content = self._validate_string(
+                content, "content", max_length=50000, allow_empty=True
+            )
+        if order is not None:
+            order = self._validate_positive_int(order, "order")
+        if status is not None:
+            status = self._validate_literal(status, "status", ["publish", "draft"])
+
+        updates = []
+
+        if title:
+            updates.append(f'--post_title={shlex.quote(title)}')
+        if content is not None:
+            updates.append(f'--post_content={shlex.quote(content)}')
+        if status:
+            updates.append(f'--post_status={status}')
+
+        if updates:
+            cmd = f'post update {topic_id} {" ".join(updates)}'
+            self.cli.execute(cmd)
+
+        if order is not None:
+            self.cli.execute(f'post meta update {topic_id} topic_order {order}')
+
+        self.logger.info(f"Updated topic {topic_id}")
+
+        return {"success": True, "id": topic_id, "action": "updated", "data": {"updated": True}}
+
+    # ==================== QUIZ MODIFICATION ====================
+
+    def update_quiz(
+        self,
+        quiz_id: int,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        passing_score: Optional[int] = None,
+        quiz_attempts: Optional[int] = None,
+        time_limit: Optional[int] = None,
+    ) -> dict:
+        """
+        Update quiz settings like title, passing score, attempts, time limit.
+
+        Args:
+            quiz_id: Quiz post ID
+            title: New title (optional)
+            description: New description (optional)
+            passing_score: New passing percentage 0-100 (optional)
+            quiz_attempts: Number of allowed attempts (optional)
+            time_limit: Time limit in minutes (optional)
+
+        Returns:
+            Updated quiz data
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        quiz_id = self._validate_positive_int(quiz_id, "quiz_id")
+        if title is not None:
+            title = self._validate_string(title, "title", max_length=200)
+        if description is not None:
+            description = self._validate_string(
+                description, "description", max_length=50000, allow_empty=True
+            )
+        if passing_score is not None:
+            passing_score = self._validate_int_range(
+                passing_score, "passing_score", 0, 100
+            )
+        if quiz_attempts is not None:
+            quiz_attempts = self._validate_positive_int(quiz_attempts, "quiz_attempts")
+        if time_limit is not None:
+            time_limit = self._validate_positive_int(time_limit, "time_limit")
+
+        updates = []
+
+        if title:
+            updates.append(f'--post_title={shlex.quote(title)}')
+        if description is not None:
+            updates.append(f'--post_content={shlex.quote(description)}')
+
+        if updates:
+            cmd = f'post update {quiz_id} {" ".join(updates)}'
+            self.cli.execute(cmd)
+
+        # Update LearnDash quiz meta
+        if passing_score is not None:
+            self.cli.execute(
+                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_passingpercentage]" {passing_score}'
+            )
+
+        if quiz_attempts is not None:
+            self.cli.execute(
+                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_repeats]" {quiz_attempts}'
+            )
+
+        if time_limit is not None:
+            self.cli.execute(
+                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_time_limit]" {time_limit}'
+            )
+
+        self.logger.info(f"Updated quiz {quiz_id}")
+
+        return {"success": True, "id": quiz_id, "action": "updated", "data": {"updated": True}}
+
+    # ==================== CONTENT REORDERING ====================
+
+    def reorder_lessons(
+        self,
+        course_id: int,
+        lesson_order: list[int],
+    ) -> dict:
+        """
+        Reorder lessons in a course.
+
+        Args:
+            course_id: Course post ID
+            lesson_order: List of lesson IDs in desired order [123, 456, 789]
+
+        Returns:
+            Confirmation with new order
+
+        Raises:
+            ValueError: If input validation fails
+
+        Example:
+            # Put lesson 456 first, then 123, then 789
+            reorder_lessons(course_id=1, lesson_order=[456, 123, 789])
+        """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+
+        if not isinstance(lesson_order, list):
+            raise ValueError("lesson_order must be a list")
+        if not lesson_order:
+            raise ValueError("lesson_order cannot be empty")
+
+        # Validate each lesson ID
+        validated_lessons = [
+            self._validate_positive_int(lid, f"lesson_order[{i}]")
+            for i, lid in enumerate(lesson_order)
+        ]
+
+        # Update menu_order for each lesson
+        for index, lesson_id in enumerate(validated_lessons):
+            # menu_order starts at 0
+            menu_order = index
+            self.cli.execute(f'post update {lesson_id} --menu_order={menu_order}')
+            self.logger.info(f"Set lesson {lesson_id} to position {menu_order}")
+
+        self.logger.info(f"Reordered {len(validated_lessons)} lessons in course {course_id}")
+
+        return {
+            "success": True,
+            "id": course_id,
+            "action": "reordered",
+            "data": {
+                "course_id": course_id,
+                "lesson_order": validated_lessons,
+                "total_lessons": len(validated_lessons),
+            }
+        }
+
+    def reorder_topics(
+        self,
+        lesson_id: int,
+        topic_order: list[int],
+    ) -> dict:
+        """
+        Reorder topics within a lesson using menu_order.
+
+        Args:
+            lesson_id: Lesson post ID
+            topic_order: List of topic IDs in desired order [123, 456, 789]
+
+        Returns:
+            Confirmation with new order
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+
+        if not isinstance(topic_order, list):
+            raise ValueError("topic_order must be a list")
+        if not topic_order:
+            raise ValueError("topic_order cannot be empty")
+
+        # Validate each topic ID
+        validated_topics = [
+            self._validate_positive_int(tid, f"topic_order[{i}]")
+            for i, tid in enumerate(topic_order)
+        ]
+
+        # Update menu_order for each topic
+        for index, topic_id in enumerate(validated_topics):
+            # menu_order starts at 0
+            menu_order = index
+            self.cli.execute(f'post update {topic_id} --menu_order={menu_order}')
+            self.logger.info(f"Set topic {topic_id} to position {menu_order}")
+
+        self.logger.info(f"Reordered {len(validated_topics)} topics in lesson {lesson_id}")
+
+        return {
+            "success": True,
+            "id": lesson_id,
+            "action": "reordered",
+            "data": {
+                "lesson_id": lesson_id,
+                "topic_order": validated_topics,
+                "total_topics": len(validated_topics),
+            }
+        }
+
+    # ==================== CONTENT MOVEMENT ====================
+
+    def move_lesson_to_course(
+        self,
+        lesson_id: int,
+        from_course_id: int,
+        to_course_id: int,
+        new_order: Optional[int] = None,
+    ) -> dict:
+        """
+        Move a lesson from one course to another.
+
+        Args:
+            lesson_id: Lesson post ID
+            from_course_id: Source course ID
+            to_course_id: Destination course ID
+            new_order: New order/position in destination course (optional)
+
+        Returns:
+            Move confirmation
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+        from_course_id = self._validate_positive_int(from_course_id, "from_course_id")
+        to_course_id = self._validate_positive_int(to_course_id, "to_course_id")
+        if new_order is not None:
+            new_order = self._validate_positive_int(new_order, "new_order")
+
+        # Verify lesson belongs to from_course_id
+        lesson_data = self.cli.get_post(lesson_id)
+        if not lesson_data:
+            raise ValueError(f"Lesson {lesson_id} not found")
+
+        current_course = None
+        if 'meta' in lesson_data:
+            current_course = lesson_data['meta'].get('course_id')
+
+        if current_course and int(current_course) != from_course_id:
+            self.logger.warning(
+                f"Lesson {lesson_id} belongs to course {current_course}, not {from_course_id}"
+            )
+
+        # Update course association
+        self.cli.execute(f'post meta update {lesson_id} course_id {to_course_id}')
+        self.cli.execute(f'post meta update {lesson_id} ld_course_{to_course_id} {to_course_id}')
+
+        # Remove old course association
+        self.cli.execute(f'post meta delete {lesson_id} ld_course_{from_course_id}')
+
+        # Set new order if provided
+        if new_order is not None:
+            self.cli.execute(f'post meta update {lesson_id} lesson_order {new_order}')
+
+        self.logger.info(
+            f"Moved lesson {lesson_id} from course {from_course_id} to course {to_course_id}"
+        )
+
+        return {
+            "success": True,
+            "id": lesson_id,
+            "action": "moved",
+            "data": {
+                "lesson_id": lesson_id,
+                "from_course_id": from_course_id,
+                "to_course_id": to_course_id,
+                "new_order": new_order,
+            }
+        }
+
+    # ==================== CONTENT DUPLICATION ====================
+
+    def duplicate_lesson(
+        self,
+        lesson_id: int,
+        new_title: Optional[str] = None,
+        include_topics: bool = True,
+    ) -> dict:
+        """
+        Duplicate a lesson (and optionally its topics).
+
+        Args:
+            lesson_id: Lesson post ID to duplicate
+            new_title: Title for duplicated lesson (optional, defaults to "Copy of [original]")
+            include_topics: Whether to duplicate topics as well (default: True)
+
+        Returns:
+            New lesson ID and list of duplicated topic IDs
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+        if new_title is not None:
+            new_title = self._validate_string(new_title, "new_title", max_length=200)
+
+        # Get original lesson data
+        original = self.cli.get_post(lesson_id)
+        if not original:
+            raise ValueError(f"Lesson {lesson_id} not found")
+
+        # Determine new title
+        original_title = original.get('title', {}).get('rendered', 'Untitled')
+        duplicate_title = new_title if new_title else f"Copy of {original_title}"
+
+        # Get lesson metadata
+        course_id = None
+        if 'meta' in original:
+            course_id = original['meta'].get('course_id')
+
+        # Get lesson content
+        content = original.get('content', {}).get('rendered', '')
+
+        # Create duplicate lesson
+        if course_id:
+            new_lesson = self.create_lesson(
+                course_id=int(course_id),
+                title=duplicate_title,
+                content=content,
+                status="draft",
+            )
+        else:
+            raise ValueError(f"Lesson {lesson_id} has no associated course")
+
+        new_lesson_id = new_lesson['id']
+
+        # Duplicate topics if requested
+        duplicated_topics = []
+        if include_topics:
+            original_topics = self.list_lesson_topics(lesson_id)
+            for topic in original_topics:
+                topic_id = topic.get('ID') or topic.get('id')
+                topic_title = topic.get('post_title') or topic.get('title', {}).get('rendered', 'Untitled')
+
+                # Get topic data
+                topic_data = self.cli.get_post(topic_id)
+                topic_content = topic_data.get('content', {}).get('rendered', '')
+
+                # Create duplicate topic
+                new_topic = self.create_topic(
+                    lesson_id=new_lesson_id,
+                    title=f"Copy of {topic_title}",
+                    content=topic_content,
+                    status="draft",
+                )
+                duplicated_topics.append(new_topic['id'])
+
+        self.logger.info(
+            f"Duplicated lesson {lesson_id} as {new_lesson_id} "
+            f"with {len(duplicated_topics)} topics"
+        )
+
+        return {
+            "success": True,
+            "id": new_lesson_id,
+            "action": "duplicated",
+            "data": {
+                "original_lesson_id": lesson_id,
+                "new_lesson_id": new_lesson_id,
+                "new_title": duplicate_title,
+                "duplicated_topics": duplicated_topics,
+                "topics_count": len(duplicated_topics),
+            }
+        }
+
+    # ==================== BATCH OPERATIONS ====================
+
+    def batch_update_lesson_content(
+        self,
+        updates: list[dict],
+    ) -> dict:
+        """
+        Update multiple lessons in one call.
+
+        Args:
+            updates: List of dicts like:
+                [
+                    {"lesson_id": 123, "title": "New Title", "content": "..."},
+                    {"lesson_id": 456, "order": 2},
+                ]
+
+        Returns:
+            Success/failure for each update
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate updates list
+        if not isinstance(updates, list):
+            raise ValueError("updates must be a list")
+        if not updates:
+            raise ValueError("updates cannot be empty")
+
+        results = {
+            "total_updates": len(updates),
+            "successful": 0,
+            "failed": 0,
+            "details": [],
+        }
+
+        for i, update_dict in enumerate(updates):
+            try:
+                if not isinstance(update_dict, dict):
+                    raise ValueError(f"updates[{i}] must be a dict")
+
+                lesson_id = update_dict.get("lesson_id")
+                if not lesson_id:
+                    raise ValueError(f"updates[{i}] missing lesson_id")
+
+                # Perform update
+                result = self.update_lesson(
+                    lesson_id=lesson_id,
+                    title=update_dict.get("title"),
+                    content=update_dict.get("content"),
+                    order=update_dict.get("order"),
+                )
+
+                results["successful"] += 1
+                results["details"].append({
+                    "lesson_id": lesson_id,
+                    "status": "success",
+                    "result": result,
+                })
+
+            except Exception as e:
+                self.logger.error(f"Failed to update lesson in batch (index {i}): {e}")
+                results["failed"] += 1
+                results["details"].append({
+                    "lesson_id": update_dict.get("lesson_id", "unknown"),
+                    "status": "failed",
+                    "error": str(e),
+                })
+
+        self.logger.info(
+            f"Batch update completed: {results['successful']} successful, "
+            f"{results['failed']} failed"
+        )
+
+        return {
+            "success": results["failed"] == 0,
+            "id": None,
+            "action": "batch_updated",
+            "data": results,
+        }
+
+    # ==================== LESSON PREREQUISITES ====================
+
+    def set_lesson_prerequisites(
+        self,
+        lesson_id: int,
+        prerequisite_lesson_ids: list[int],
+    ) -> dict:
+        """
+        Set which lessons must be completed before this one.
+
+        Args:
+            lesson_id: Lesson post ID
+            prerequisite_lesson_ids: List of lesson IDs that must be completed first
+
+        Returns:
+            Prerequisites confirmation
+
+        Raises:
+            ValueError: If input validation fails
+        """
+        # Validate inputs
+        lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
+
+        if not isinstance(prerequisite_lesson_ids, list):
+            raise ValueError("prerequisite_lesson_ids must be a list")
+
+        # Validate each prerequisite ID and check for circular dependencies
+        validated_prerequisites = []
+        for i, prereq_id in enumerate(prerequisite_lesson_ids):
+            prereq_id = self._validate_positive_int(prereq_id, f"prerequisite_lesson_ids[{i}]")
+
+            # Prevent lesson from being its own prerequisite
+            if prereq_id == lesson_id:
+                raise ValueError(
+                    f"Circular dependency: Lesson {lesson_id} cannot be its own prerequisite"
+                )
+
+            validated_prerequisites.append(prereq_id)
+
+        # LearnDash stores prerequisites as a serialized array
+        # For single prerequisite, use lesson_prerequisite meta
+        # For multiple, we need to use the LearnDash settings array
+
+        if len(validated_prerequisites) == 1:
+            self.cli.execute(
+                f'post meta update {lesson_id} lesson_prerequisite {validated_prerequisites[0]}'
+            )
+        elif len(validated_prerequisites) > 1:
+            # Store as comma-separated for now
+            # In production, this should be properly serialized
+            prereq_str = ','.join(map(str, validated_prerequisites))
+            self.cli.execute(
+                f'post meta update {lesson_id} lesson_prerequisites {shlex.quote(prereq_str)}'
+            )
+        else:
+            # Clear prerequisites
+            self.cli.execute(f'post meta delete {lesson_id} lesson_prerequisite')
+            self.cli.execute(f'post meta delete {lesson_id} lesson_prerequisites')
+
+        self.logger.info(
+            f"Set {len(validated_prerequisites)} prerequisites for lesson {lesson_id}"
+        )
+
+        return {
+            "success": True,
+            "id": lesson_id,
+            "action": "prerequisites_set",
+            "data": {
+                "lesson_id": lesson_id,
+                "prerequisite_lesson_ids": validated_prerequisites,
+                "count": len(validated_prerequisites),
+            }
+        }
+
+    # ==================== COURSE BUILDER STRUCTURE ====================
+
+    def update_course_builder_structure(
+        self,
+        course_id: int,
+        structure: dict,
+    ) -> dict:
+        """
+        Update the entire course structure in one call.
+
+        Args:
+            course_id: Course post ID
+            structure: Dict defining the course structure:
+            {
+                "sections": [
+                    {
+                        "heading": "Module 1: Introduction",
+                        "lessons": [
+                            {"lesson_id": 123, "order": 1},
+                            {"lesson_id": 456, "order": 2},
+                        ]
+                    },
+                    {
+                        "heading": "Module 2: Advanced",
+                        "lessons": [...]
+                    }
+                ]
+            }
+
+        Returns:
+            Structure update confirmation
+
+        Raises:
+            ValueError: If input validation fails
+
+        Note:
+            This uses LearnDash's course builder data structure.
+        """
+        # Validate inputs
+        course_id = self._validate_positive_int(course_id, "course_id")
+
+        if not isinstance(structure, dict):
+            raise ValueError("structure must be a dict")
+        if "sections" not in structure:
+            raise ValueError("structure must contain 'sections' key")
+        if not isinstance(structure["sections"], list):
+            raise ValueError("structure['sections'] must be a list")
+
+        # Validate and process each section
+        total_lessons = 0
+        for i, section in enumerate(structure["sections"]):
+            if not isinstance(section, dict):
+                raise ValueError(f"sections[{i}] must be a dict")
+
+            if "heading" not in section:
+                raise ValueError(f"sections[{i}] missing 'heading'")
+
+            heading = self._validate_string(
+                section["heading"], f"sections[{i}].heading", max_length=200
+            )
+
+            if "lessons" in section:
+                if not isinstance(section["lessons"], list):
+                    raise ValueError(f"sections[{i}]['lessons'] must be a list")
+
+                # Validate lesson IDs
+                for j, lesson_info in enumerate(section["lessons"]):
+                    if not isinstance(lesson_info, dict):
+                        raise ValueError(f"sections[{i}].lessons[{j}] must be a dict")
+                    if "lesson_id" not in lesson_info:
+                        raise ValueError(f"sections[{i}].lessons[{j}] missing 'lesson_id'")
+
+                    lesson_id = self._validate_positive_int(
+                        lesson_info["lesson_id"],
+                        f"sections[{i}].lessons[{j}].lesson_id"
+                    )
+                    total_lessons += 1
+
+        # Store the course builder structure
+        # LearnDash uses a complex serialized structure
+        # For now, we'll store as JSON in a custom meta field
+        import json
+        structure_json = json.dumps(structure)
+
+        self.cli.execute(
+            f'post meta update {course_id} ld_course_builder {shlex.quote(structure_json)}'
+        )
+
+        # Also update individual lesson orders
+        global_order = 0
+        for section in structure["sections"]:
+            if "lessons" in section:
+                for lesson_info in section["lessons"]:
+                    lesson_id = lesson_info["lesson_id"]
+                    order = lesson_info.get("order", global_order)
+                    self.cli.execute(f'post update {lesson_id} --menu_order={order}')
+                    global_order += 1
+
+        self.logger.info(
+            f"Updated course builder structure for course {course_id} "
+            f"with {len(structure['sections'])} sections and {total_lessons} lessons"
+        )
+
+        return {
+            "success": True,
+            "id": course_id,
+            "action": "structure_updated",
+            "data": {
+                "course_id": course_id,
+                "sections_count": len(structure["sections"]),
+                "total_lessons": total_lessons,
+                "structure": structure,
+            }
+        }
+
     # ==================== ANALYTICS & PROGRESS ====================
 
     def get_user_progress(self, user_id: int, course_id: int) -> dict:

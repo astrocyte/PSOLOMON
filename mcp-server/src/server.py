@@ -425,6 +425,21 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="ld_update_topic",
+            description="Update an existing topic",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "topic_id": {"type": "number", "description": "Topic ID"},
+                    "title": {"type": "string", "description": "New title (optional)"},
+                    "content": {"type": "string", "description": "New content (optional)"},
+                    "order": {"type": "number", "description": "New order (optional)"},
+                    "status": {"type": "string", "description": "New status (optional)"},
+                },
+                "required": ["topic_id"],
+            },
+        ),
+        Tool(
             name="ld_list_lesson_topics",
             description="List all topics for a lesson",
             inputSchema={
@@ -433,6 +448,134 @@ async def list_tools() -> list[Tool]:
                     "lesson_id": {"type": "number", "description": "Lesson ID"},
                 },
                 "required": ["lesson_id"],
+            },
+        ),
+        # Quiz Modification
+        Tool(
+            name="ld_update_quiz",
+            description="Update quiz settings like title, passing score, attempts, time limit",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "quiz_id": {"type": "number", "description": "Quiz ID"},
+                    "title": {"type": "string", "description": "New title (optional)"},
+                    "description": {"type": "string", "description": "New description (optional)"},
+                    "passing_score": {"type": "number", "description": "Passing percentage 0-100 (optional)"},
+                    "quiz_attempts": {"type": "number", "description": "Number of allowed attempts (optional)"},
+                    "time_limit": {"type": "number", "description": "Time limit in minutes (optional)"},
+                },
+                "required": ["quiz_id"],
+            },
+        ),
+        # Content Reordering
+        Tool(
+            name="ld_reorder_lessons",
+            description="Reorder lessons in a course",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "number", "description": "Course ID"},
+                    "lesson_order": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of lesson IDs in desired order [123, 456, 789]",
+                    },
+                },
+                "required": ["course_id", "lesson_order"],
+            },
+        ),
+        Tool(
+            name="ld_reorder_topics",
+            description="Reorder topics within a lesson",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lesson_id": {"type": "number", "description": "Lesson ID"},
+                    "topic_order": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of topic IDs in desired order [123, 456, 789]",
+                    },
+                },
+                "required": ["lesson_id", "topic_order"],
+            },
+        ),
+        # Content Movement
+        Tool(
+            name="ld_move_lesson_to_course",
+            description="Move a lesson from one course to another",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lesson_id": {"type": "number", "description": "Lesson ID"},
+                    "from_course_id": {"type": "number", "description": "Source course ID"},
+                    "to_course_id": {"type": "number", "description": "Destination course ID"},
+                    "new_order": {"type": "number", "description": "New order in destination course (optional)"},
+                },
+                "required": ["lesson_id", "from_course_id", "to_course_id"],
+            },
+        ),
+        # Content Duplication
+        Tool(
+            name="ld_duplicate_lesson",
+            description="Duplicate a lesson (and optionally its topics)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lesson_id": {"type": "number", "description": "Lesson ID to duplicate"},
+                    "new_title": {"type": "string", "description": "Title for duplicated lesson (optional)"},
+                    "include_topics": {"type": "boolean", "description": "Duplicate topics as well (default: true)"},
+                },
+                "required": ["lesson_id"],
+            },
+        ),
+        # Batch Operations
+        Tool(
+            name="ld_batch_update_lesson_content",
+            description="Update multiple lessons in one call",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "updates": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "List of lesson updates: [{'lesson_id': 123, 'title': 'New Title'}, ...]",
+                    },
+                },
+                "required": ["updates"],
+            },
+        ),
+        # Lesson Prerequisites
+        Tool(
+            name="ld_set_lesson_prerequisites",
+            description="Set which lessons must be completed before this one",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "lesson_id": {"type": "number", "description": "Lesson ID"},
+                    "prerequisite_lesson_ids": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "List of lesson IDs that must be completed first",
+                    },
+                },
+                "required": ["lesson_id", "prerequisite_lesson_ids"],
+            },
+        ),
+        # Course Builder Structure
+        Tool(
+            name="ld_update_course_builder_structure",
+            description="Update the entire course structure in one call (sections with lessons)",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "course_id": {"type": "number", "description": "Course ID"},
+                    "structure": {
+                        "type": "object",
+                        "description": "Course structure with sections and lessons",
+                    },
+                },
+                "required": ["course_id", "structure"],
             },
         ),
         # Analytics & Progress
@@ -936,11 +1079,90 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             )
             return [TextContent(type="text", text=str(result))]
 
+        elif name == "ld_update_topic":
+            result = ld.update_topic(
+                topic_id=arguments["topic_id"],
+                title=arguments.get("title"),
+                content=arguments.get("content"),
+                order=arguments.get("order"),
+                status=arguments.get("status"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
         elif name == "ld_list_lesson_topics":
             topics = ld.list_lesson_topics(
                 lesson_id=arguments["lesson_id"]
             )
             return [TextContent(type="text", text=str(topics))]
+
+        # Quiz Modification
+        elif name == "ld_update_quiz":
+            result = ld.update_quiz(
+                quiz_id=arguments["quiz_id"],
+                title=arguments.get("title"),
+                description=arguments.get("description"),
+                passing_score=arguments.get("passing_score"),
+                quiz_attempts=arguments.get("quiz_attempts"),
+                time_limit=arguments.get("time_limit"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Content Reordering
+        elif name == "ld_reorder_lessons":
+            result = ld.reorder_lessons(
+                course_id=arguments["course_id"],
+                lesson_order=arguments["lesson_order"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        elif name == "ld_reorder_topics":
+            result = ld.reorder_topics(
+                lesson_id=arguments["lesson_id"],
+                topic_order=arguments["topic_order"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Content Movement
+        elif name == "ld_move_lesson_to_course":
+            result = ld.move_lesson_to_course(
+                lesson_id=arguments["lesson_id"],
+                from_course_id=arguments["from_course_id"],
+                to_course_id=arguments["to_course_id"],
+                new_order=arguments.get("new_order"),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Content Duplication
+        elif name == "ld_duplicate_lesson":
+            result = ld.duplicate_lesson(
+                lesson_id=arguments["lesson_id"],
+                new_title=arguments.get("new_title"),
+                include_topics=arguments.get("include_topics", True),
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Batch Operations
+        elif name == "ld_batch_update_lesson_content":
+            result = ld.batch_update_lesson_content(
+                updates=arguments["updates"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Lesson Prerequisites
+        elif name == "ld_set_lesson_prerequisites":
+            result = ld.set_lesson_prerequisites(
+                lesson_id=arguments["lesson_id"],
+                prerequisite_lesson_ids=arguments["prerequisite_lesson_ids"],
+            )
+            return [TextContent(type="text", text=str(result))]
+
+        # Course Builder Structure
+        elif name == "ld_update_course_builder_structure":
+            result = ld.update_course_builder_structure(
+                course_id=arguments["course_id"],
+                structure=arguments["structure"],
+            )
+            return [TextContent(type="text", text=str(result))]
 
         # Analytics & Progress
         elif name == "ld_get_user_progress":

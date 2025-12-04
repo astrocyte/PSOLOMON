@@ -9,12 +9,13 @@ Virtual website administrator for SST.NYC - Complete WordPress management system
 
 PSOLOMON is your AI-powered virtual website admin that:
 - 🔧 Manages WordPress plugins and configuration
-- 📚 Handles LearnDash LMS (courses, lessons, quizzes, enrollments)
+- 📚 **Comprehensive LearnDash LMS** (courses, lessons, topics, quizzes, enrollments, progress tracking, analytics)
 - 🛒 Manages WooCommerce (products, orders, coupons)
 - 👥 Runs the affiliate program
 - 💾 Creates and manages backups
 - 🔍 Optimizes SEO and content
 - 📊 Tracks performance and analytics
+- 🎓 **NYC DOB compliance reporting** for safety training
 
 **Just tell Claude what you need, and PSOLOMON handles it.**
 
@@ -47,11 +48,12 @@ PSOLOMON/
 │   └── deploy_to_production.sh
 │
 ├── docs/                    # Complete documentation
-│   ├── AFFILIATE_MANAGER.md
+│   ├── AFFILIATE_ENHANCEMENTS.md
 │   ├── BACKUP_GUIDE.md
-│   ├── LEARNDASH_GUIDE.md
-│   ├── MCP_TOOLS.md
-│   └── DEPLOYMENT.md
+│   ├── LEARNDASH_ENHANCEMENTS.md  # ⭐ NEW: Complete LearnDash guide
+│   ├── MCP_BACKUP_USAGE.md
+│   ├── TESTING_GUIDE.md
+│   └── CODE_REVIEW_AFFILIATE_ENHANCEMENTS.md
 │
 ├── backups/                 # Local backups (git-ignored)
 │   └── .gitkeep
@@ -103,12 +105,17 @@ pip install -e .
 - "List all backups"
 - "Show me backup from last week"
 
-### LearnDash LMS
-- "Create a new course called 'Fall Prevention'"
-- "Add a lesson to course ID 123"
-- "Enroll user@email.com in the 10-Hour course"
-- "Create a quiz with 10 questions"
-- "List all students in a course"
+### LearnDash LMS ⭐ **Enhanced!**
+- "Create a new course called 'Fall Prevention' with 3 lessons and 2 topics each"
+- "Add a lesson to course ID 123 with video content"
+- "Enroll 25 students in the 10-Hour course in bulk"
+- "Create a quiz with 10 multiple choice questions"
+- "Show me progress for all students in course 979"
+- "Get completion rate for the 30-Hour Scaffold course"
+- "Generate NYC DOB compliance report for Q4 2024"
+- "Create a group for ACME Construction with 50 students"
+- "Track which students are falling behind"
+- "List all certificates earned by john@example.com"
 
 ### WooCommerce
 - "Create a product for the 10-Hour course"
@@ -138,7 +145,12 @@ PSOLOMON uses MCP to give Claude direct access to WordPress:
 Claude Code <---> MCP Server <---> WordPress (SSH/API)
 ```
 
-**Available Tools:** 36+ MCP tools for complete WordPress management
+**Available Tools:** 42 MCP tools for complete WordPress management
+- **21 LearnDash tools** (12 newly added!) - Complete LMS management with progress tracking, analytics, bulk operations
+- **WordPress core** - Site management, plugins, themes, updates
+- **WooCommerce** - Products, orders, coupons, sales reports
+- **Backups** - Create, list, manage backups
+- **SEO & Images** - Content optimization and image processing
 
 ### WordPress Plugins
 Custom plugins built specifically for SST.NYC:

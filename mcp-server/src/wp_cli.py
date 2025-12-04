@@ -1,6 +1,7 @@
 """WordPress CLI wrapper for remote execution via SSH."""
 
 import json
+import shlex
 import paramiko
 from typing import Any, Optional
 from .config import WordPressConfig
@@ -122,7 +123,8 @@ class WPCLIClient:
             search: Search query
             post_type: Post type to search (post, page, etc.)
         """
-        cmd = f"post list --post_type={post_type} --s='{search}'"
+        # Security: Use shlex.quote to prevent command injection
+        cmd = f"post list --post_type={shlex.quote(post_type)} --s={shlex.quote(search)}"
         return self.execute(cmd, format="json")
 
     def list_posts(

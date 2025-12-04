@@ -157,7 +157,8 @@ class LearnDashManager:
             Meta value or None if not found
         """
         try:
-            cmd = f'post meta get {post_id} {meta_key}'
+            # Security: Quote all parameters to prevent command injection
+            cmd = f'post meta get {shlex.quote(str(post_id))} {shlex.quote(meta_key)}'
             result = self.cli.execute(cmd)
             return result if result else None
         except Exception:
@@ -210,15 +211,17 @@ class LearnDashManager:
         result = self.cli.execute(cmd, format="json")
         course_id = result if isinstance(result, int) else int(result)
 
-        # Set course meta
+        # Set course meta (Security: quote all parameters)
         if price is not None:
             self.cli.execute(
-                f'post meta update {course_id} _sfwd-courses "_sfwd-courses[sfwd-courses_course_price]" {price}'
+                f'post meta update {shlex.quote(str(course_id))} {shlex.quote("_sfwd-courses")} '
+                f'{shlex.quote("_sfwd-courses[sfwd-courses_course_price]")} {shlex.quote(str(price))}'
             )
 
         if certificate_id:
             self.cli.execute(
-                f'post meta update {course_id} _sfwd-courses "_sfwd-courses[sfwd-courses_certificate]" {certificate_id}'
+                f'post meta update {shlex.quote(str(course_id))} {shlex.quote("_sfwd-courses")} '
+                f'{shlex.quote("_sfwd-courses[sfwd-courses_certificate]")} {shlex.quote(str(certificate_id))}'
             )
 
         self.logger.info(f"Created course {course_id}: {title}")
@@ -280,12 +283,13 @@ class LearnDashManager:
             updates.append(f'--post_status={status}')
 
         if updates:
-            cmd = f'post update {course_id} {" ".join(updates)}'
+            cmd = f'post update {shlex.quote(str(course_id))} {" ".join(updates)}'
             self.cli.execute(cmd)
 
         if price is not None:
             self.cli.execute(
-                f'post meta update {course_id} _sfwd-courses "_sfwd-courses[sfwd-courses_course_price]" {price}'
+                f'post meta update {shlex.quote(str(course_id))} {shlex.quote("_sfwd-courses")} '
+                f'{shlex.quote("_sfwd-courses[sfwd-courses_course_price]")} {shlex.quote(str(price))}'
             )
 
         self.logger.info(f"Updated course {course_id}")
@@ -326,7 +330,7 @@ class LearnDashManager:
         # Validate inputs
         course_id = self._validate_positive_int(course_id, "course_id")
 
-        cmd = f'post delete {course_id}'
+        cmd = f'post delete {shlex.quote(str(course_id))}'
         if force:
             cmd += ' --force'
 
@@ -379,18 +383,18 @@ class LearnDashManager:
         result = self.cli.execute(cmd, format="json")
         lesson_id = result if isinstance(result, int) else int(result)
 
-        # Associate with course
+        # Associate with course (Security: quote all parameters)
         self.cli.execute(
-            f'post meta update {lesson_id} course_id {course_id}'
+            f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("course_id")} {shlex.quote(str(course_id))}'
         )
         self.cli.execute(
-            f'post meta update {lesson_id} ld_course_{course_id} {course_id}'
+            f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote(f"ld_course_{course_id}")} {shlex.quote(str(course_id))}'
         )
 
         # Set order if provided
         if order is not None:
             self.cli.execute(
-                f'post meta update {lesson_id} lesson_order {order}'
+                f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("lesson_order")} {shlex.quote(str(order))}'
             )
 
         self.logger.info(f"Created lesson {lesson_id}: {title} for course {course_id}")
@@ -444,11 +448,11 @@ class LearnDashManager:
             updates.append(f'--post_content={shlex.quote(content)}')
 
         if updates:
-            cmd = f'post update {lesson_id} {" ".join(updates)}'
+            cmd = f'post update {shlex.quote(str(lesson_id))} {" ".join(updates)}'
             self.cli.execute(cmd)
 
         if order is not None:
-            self.cli.execute(f'post meta update {lesson_id} lesson_order {order}')
+            self.cli.execute(f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("lesson_order")} {shlex.quote(str(order))}')
 
         self.logger.info(f"Updated lesson {lesson_id}")
 
@@ -470,7 +474,7 @@ class LearnDashManager:
         # Validate inputs
         course_id = self._validate_positive_int(course_id, "course_id")
 
-        cmd = f'post list --post_type=sfwd-lessons --meta_key=course_id --meta_value={course_id} --orderby=menu_order --order=ASC'
+        cmd = f'post list --post_type=sfwd-lessons --meta_key=course_id --meta_value={shlex.quote(str(course_id))} --orderby=menu_order --order=ASC'
         return self.cli.execute(cmd, format="json")
 
     # ==================== QUIZ MANAGEMENT ====================
@@ -524,20 +528,22 @@ class LearnDashManager:
         result = self.cli.execute(cmd, format="json")
         quiz_id = result if isinstance(result, int) else int(result)
 
-        # Set quiz meta
-        self.cli.execute(f'post meta update {quiz_id} course_id {course_id}')
+        # Set quiz meta (Security: quote all parameters)
+        self.cli.execute(f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("course_id")} {shlex.quote(str(course_id))}')
 
         if lesson_id:
-            self.cli.execute(f'post meta update {quiz_id} lesson_id {lesson_id}')
+            self.cli.execute(f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("lesson_id")} {shlex.quote(str(lesson_id))}')
 
         # Set passing score
         self.cli.execute(
-            f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_passingpercentage]" {passing_score}'
+            f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("_sfwd-quiz")} '
+            f'{shlex.quote("_sfwd-quiz[sfwd-quiz_passingpercentage]")} {shlex.quote(str(passing_score))}'
         )
 
         if certificate_id:
             self.cli.execute(
-                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_certificate]" {certificate_id}'
+                f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("_sfwd-quiz")} '
+                f'{shlex.quote("_sfwd-quiz[sfwd-quiz_certificate]")} {shlex.quote(str(certificate_id))}'
             )
 
         self.logger.info(f"Created quiz {quiz_id}: {title} for course {course_id}")
@@ -596,8 +602,8 @@ class LearnDashManager:
         result = self.cli.execute(cmd, format="json")
         question_id = result if isinstance(result, int) else int(result)
 
-        # Associate with quiz
-        self.cli.execute(f'post meta update {question_id} quiz_id {quiz_id}')
+        # Associate with quiz (Security: quote all parameters)
+        self.cli.execute(f'post meta update {shlex.quote(str(question_id))} {shlex.quote("quiz_id")} {shlex.quote(str(quiz_id))}')
 
         # Set question type
         type_map = {
@@ -607,11 +613,11 @@ class LearnDashManager:
             "essay": "essay_text",
         }
         self.cli.execute(
-            f'post meta update {question_id} question_type {type_map[question_type]}'
+            f'post meta update {shlex.quote(str(question_id))} {shlex.quote("question_type")} {shlex.quote(type_map[question_type])}'
         )
 
         # Set points
-        self.cli.execute(f'post meta update {question_id} question_points {points}')
+        self.cli.execute(f'post meta update {shlex.quote(str(question_id))} {shlex.quote("question_points")} {shlex.quote(str(points))}')
 
         # Add answers if provided
         if answers and question_type in ["single", "multiple"]:
@@ -649,13 +655,13 @@ class LearnDashManager:
         user_id = self._validate_positive_int(user_id, "user_id")
         course_id = self._validate_positive_int(course_id, "course_id")
 
-        # LearnDash stores enrollments in user meta
+        # LearnDash stores enrollments in user meta (Security: quote all parameters)
         self.cli.execute(
-            f'user meta add {user_id} course_enrolled_{course_id} {course_id}'
+            f'user meta add {shlex.quote(str(user_id))} {shlex.quote(f"course_enrolled_{course_id}")} {shlex.quote(str(course_id))}'
         )
 
         # Also update course user list
-        cmd = f'post meta add {course_id} learndash_course_users {user_id}'
+        cmd = f'post meta add {shlex.quote(str(course_id))} {shlex.quote("learndash_course_users")} {shlex.quote(str(user_id))}'
         self.cli.execute(cmd)
 
         self.logger.info(f"Enrolled user {user_id} in course {course_id}")
@@ -685,10 +691,10 @@ class LearnDashManager:
         course_id = self._validate_positive_int(course_id, "course_id")
 
         self.cli.execute(
-            f'user meta delete {user_id} course_enrolled_{course_id}'
+            f'user meta delete {shlex.quote(str(user_id))} {shlex.quote(f"course_enrolled_{course_id}")}'
         )
         self.cli.execute(
-            f'post meta delete {course_id} learndash_course_users {user_id}'
+            f'post meta delete {shlex.quote(str(course_id))} {shlex.quote("learndash_course_users")} {shlex.quote(str(user_id))}'
         )
 
         self.logger.info(f"Unenrolled user {user_id} from course {course_id}")
@@ -716,7 +722,7 @@ class LearnDashManager:
         user_id = self._validate_positive_int(user_id, "user_id")
 
         # Get all user meta keys starting with course_enrolled_
-        cmd = f'user meta list {user_id} --fields=meta_key,meta_value'
+        cmd = f'user meta list {shlex.quote(str(user_id))} --fields=meta_key,meta_value'
         meta = self.cli.execute(cmd, format="json")
 
         course_ids = [
@@ -748,7 +754,7 @@ class LearnDashManager:
         # Validate inputs
         course_id = self._validate_positive_int(course_id, "course_id")
 
-        cmd = f'post meta get {course_id} learndash_course_users'
+        cmd = f'post meta get {shlex.quote(str(course_id))} {shlex.quote("learndash_course_users")}'
         user_ids = self.cli.execute(cmd)
 
         # Parse serialized data if needed (LearnDash stores as serialized array)
@@ -798,11 +804,11 @@ class LearnDashManager:
         result = self.cli.execute(cmd, format="json")
         group_id = result if isinstance(result, int) else int(result)
 
-        # Associate courses
+        # Associate courses (Security: quote all parameters)
         if course_ids:
             for course_id in course_ids:
                 self.cli.execute(
-                    f'post meta add {group_id} learndash_group_enrolled_{course_id} {course_id}'
+                    f'post meta add {shlex.quote(str(group_id))} {shlex.quote(f"learndash_group_enrolled_{course_id}")} {shlex.quote(str(course_id))}'
                 )
 
         self.logger.info(f"Created group {group_id}: {title}")
@@ -833,10 +839,10 @@ class LearnDashManager:
         group_id = self._validate_positive_int(group_id, "group_id")
 
         self.cli.execute(
-            f'user meta add {user_id} learndash_group_users_{group_id} {group_id}'
+            f'user meta add {shlex.quote(str(user_id))} {shlex.quote(f"learndash_group_users_{group_id}")} {shlex.quote(str(group_id))}'
         )
         self.cli.execute(
-            f'post meta add {group_id} learndash_group_users {user_id}'
+            f'post meta add {shlex.quote(str(group_id))} {shlex.quote("learndash_group_users")} {shlex.quote(str(user_id))}'
         )
 
         self.logger.info(f"Added user {user_id} to group {group_id}")
@@ -861,12 +867,12 @@ class LearnDashManager:
         user_id = self._validate_positive_int(user_id, "user_id")
         group_id = self._validate_positive_int(group_id, "group_id")
 
-        # Add group leader meta
+        # Add group leader meta (Security: quote all parameters)
         self.cli.execute(
-            f'post meta add {group_id} learndash_group_leaders {user_id}'
+            f'post meta add {shlex.quote(str(group_id))} {shlex.quote("learndash_group_leaders")} {shlex.quote(str(user_id))}'
         )
         self.cli.execute(
-            f'user meta add {user_id} learndash_group_leaders_{group_id} {group_id}'
+            f'user meta add {shlex.quote(str(user_id))} {shlex.quote(f"learndash_group_leaders_{group_id}")} {shlex.quote(str(group_id))}'
         )
 
         self.logger.info(f"Set user {user_id} as leader of group {group_id}")
@@ -929,16 +935,16 @@ class LearnDashManager:
         if lesson_data and 'meta' in lesson_data:
             course_id = lesson_data['meta'].get('course_id')
 
-        # Associate with lesson and course
-        self.cli.execute(f'post meta update {topic_id} lesson_id {lesson_id}')
+        # Associate with lesson and course (Security: quote all parameters)
+        self.cli.execute(f'post meta update {shlex.quote(str(topic_id))} {shlex.quote("lesson_id")} {shlex.quote(str(lesson_id))}')
 
         if course_id:
-            self.cli.execute(f'post meta update {topic_id} course_id {course_id}')
-            self.cli.execute(f'post meta update {topic_id} ld_course_{course_id} {course_id}')
+            self.cli.execute(f'post meta update {shlex.quote(str(topic_id))} {shlex.quote("course_id")} {shlex.quote(str(course_id))}')
+            self.cli.execute(f'post meta update {shlex.quote(str(topic_id))} {shlex.quote(f"ld_course_{course_id}")} {shlex.quote(str(course_id))}')
 
         # Set order if provided
         if order is not None:
-            self.cli.execute(f'post meta update {topic_id} topic_order {order}')
+            self.cli.execute(f'post meta update {shlex.quote(str(topic_id))} {shlex.quote("topic_order")} {shlex.quote(str(order))}')
 
         self.logger.info(f"Created topic {topic_id}: {title} for lesson {lesson_id}")
 
@@ -967,7 +973,7 @@ class LearnDashManager:
         # Validate inputs
         lesson_id = self._validate_positive_int(lesson_id, "lesson_id")
 
-        cmd = f'post list --post_type=sfwd-topic --meta_key=lesson_id --meta_value={lesson_id} --orderby=menu_order --order=ASC'
+        cmd = f'post list --post_type=sfwd-topic --meta_key=lesson_id --meta_value={shlex.quote(str(lesson_id))} --orderby=menu_order --order=ASC'
         return self.cli.execute(cmd, format="json")
 
     def update_topic(
@@ -1017,11 +1023,11 @@ class LearnDashManager:
             updates.append(f'--post_status={status}')
 
         if updates:
-            cmd = f'post update {topic_id} {" ".join(updates)}'
+            cmd = f'post update {shlex.quote(str(topic_id))} {" ".join(updates)}'
             self.cli.execute(cmd)
 
         if order is not None:
-            self.cli.execute(f'post meta update {topic_id} topic_order {order}')
+            self.cli.execute(f'post meta update {shlex.quote(str(topic_id))} {shlex.quote("topic_order")} {shlex.quote(str(order))}')
 
         self.logger.info(f"Updated topic {topic_id}")
 
@@ -1080,23 +1086,26 @@ class LearnDashManager:
             updates.append(f'--post_content={shlex.quote(description)}')
 
         if updates:
-            cmd = f'post update {quiz_id} {" ".join(updates)}'
+            cmd = f'post update {shlex.quote(str(quiz_id))} {" ".join(updates)}'
             self.cli.execute(cmd)
 
-        # Update LearnDash quiz meta
+        # Update LearnDash quiz meta (Security: quote all parameters)
         if passing_score is not None:
             self.cli.execute(
-                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_passingpercentage]" {passing_score}'
+                f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("_sfwd-quiz")} '
+                f'{shlex.quote("_sfwd-quiz[sfwd-quiz_passingpercentage]")} {shlex.quote(str(passing_score))}'
             )
 
         if quiz_attempts is not None:
             self.cli.execute(
-                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_repeats]" {quiz_attempts}'
+                f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("_sfwd-quiz")} '
+                f'{shlex.quote("_sfwd-quiz[sfwd-quiz_repeats]")} {shlex.quote(str(quiz_attempts))}'
             )
 
         if time_limit is not None:
             self.cli.execute(
-                f'post meta update {quiz_id} _sfwd-quiz "_sfwd-quiz[sfwd-quiz_time_limit]" {time_limit}'
+                f'post meta update {shlex.quote(str(quiz_id))} {shlex.quote("_sfwd-quiz")} '
+                f'{shlex.quote("_sfwd-quiz[sfwd-quiz_time_limit]")} {shlex.quote(str(time_limit))}'
             )
 
         self.logger.info(f"Updated quiz {quiz_id}")
@@ -1158,11 +1167,11 @@ class LearnDashManager:
             except Exception as e:
                 raise ValueError(f"Could not verify ownership of lesson {lesson_id}: {e}")
 
-        # Update menu_order for each lesson
+        # Update menu_order for each lesson (Security: quote all parameters)
         for index, lesson_id in enumerate(validated_lessons):
             # menu_order starts at 0
             menu_order = index
-            self.cli.execute(f'post update {lesson_id} --menu_order={menu_order}')
+            self.cli.execute(f'post update {shlex.quote(str(lesson_id))} --menu_order={shlex.quote(str(menu_order))}')
             self.logger.info(f"Set lesson {lesson_id} to position {menu_order}")
 
         self.logger.info(f"Reordered {len(validated_lessons)} lessons in course {course_id}")
@@ -1227,11 +1236,11 @@ class LearnDashManager:
             except Exception as e:
                 raise ValueError(f"Could not verify ownership of topic {topic_id}: {e}")
 
-        # Update menu_order for each topic
+        # Update menu_order for each topic (Security: quote all parameters)
         for index, topic_id in enumerate(validated_topics):
             # menu_order starts at 0
             menu_order = index
-            self.cli.execute(f'post update {topic_id} --menu_order={menu_order}')
+            self.cli.execute(f'post update {shlex.quote(str(topic_id))} --menu_order={shlex.quote(str(menu_order))}')
             self.logger.info(f"Set topic {topic_id} to position {menu_order}")
 
         self.logger.info(f"Reordered {len(validated_topics)} topics in lesson {lesson_id}")
@@ -1292,16 +1301,16 @@ class LearnDashManager:
                 f"Lesson {lesson_id} belongs to course {current_course}, not {from_course_id}"
             )
 
-        # Update course association
-        self.cli.execute(f'post meta update {lesson_id} course_id {to_course_id}')
-        self.cli.execute(f'post meta update {lesson_id} ld_course_{to_course_id} {to_course_id}')
+        # Update course association (Security: quote all parameters)
+        self.cli.execute(f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("course_id")} {shlex.quote(str(to_course_id))}')
+        self.cli.execute(f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote(f"ld_course_{to_course_id}")} {shlex.quote(str(to_course_id))}')
 
         # Remove old course association
-        self.cli.execute(f'post meta delete {lesson_id} ld_course_{from_course_id}')
+        self.cli.execute(f'post meta delete {shlex.quote(str(lesson_id))} {shlex.quote(f"ld_course_{from_course_id}")}')
 
         # Set new order if provided
         if new_order is not None:
-            self.cli.execute(f'post meta update {lesson_id} lesson_order {new_order}')
+            self.cli.execute(f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("lesson_order")} {shlex.quote(str(new_order))}')
 
         self.logger.info(
             f"Moved lesson {lesson_id} from course {from_course_id} to course {to_course_id}"
@@ -1576,19 +1585,19 @@ class LearnDashManager:
 
         if len(validated_prerequisites) == 1:
             self.cli.execute(
-                f'post meta update {lesson_id} lesson_prerequisite {validated_prerequisites[0]}'
+                f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("lesson_prerequisite")} {shlex.quote(str(validated_prerequisites[0]))}'
             )
         elif len(validated_prerequisites) > 1:
             # Store as comma-separated for now
             # In production, this should be properly serialized
             prereq_str = ','.join(map(str, validated_prerequisites))
             self.cli.execute(
-                f'post meta update {lesson_id} lesson_prerequisites {shlex.quote(prereq_str)}'
+                f'post meta update {shlex.quote(str(lesson_id))} {shlex.quote("lesson_prerequisites")} {shlex.quote(prereq_str)}'
             )
         else:
-            # Clear prerequisites
-            self.cli.execute(f'post meta delete {lesson_id} lesson_prerequisite')
-            self.cli.execute(f'post meta delete {lesson_id} lesson_prerequisites')
+            # Clear prerequisites (Security: quote all parameters)
+            self.cli.execute(f'post meta delete {shlex.quote(str(lesson_id))} {shlex.quote("lesson_prerequisite")}')
+            self.cli.execute(f'post meta delete {shlex.quote(str(lesson_id))} {shlex.quote("lesson_prerequisites")}')
 
         self.logger.info(
             f"Set {len(validated_prerequisites)} prerequisites for lesson {lesson_id}"
@@ -1693,17 +1702,17 @@ class LearnDashManager:
         structure_json = json.dumps(structure)
 
         self.cli.execute(
-            f'post meta update {course_id} ld_course_builder {shlex.quote(structure_json)}'
+            f'post meta update {shlex.quote(str(course_id))} {shlex.quote("ld_course_builder")} {shlex.quote(structure_json)}'
         )
 
-        # Also update individual lesson orders
+        # Also update individual lesson orders (Security: quote all parameters)
         global_order = 0
         for section in structure["sections"]:
             if "lessons" in section:
                 for lesson_info in section["lessons"]:
                     lesson_id = lesson_info["lesson_id"]
                     order = lesson_info.get("order", global_order)
-                    self.cli.execute(f'post update {lesson_id} --menu_order={order}')
+                    self.cli.execute(f'post update {shlex.quote(str(lesson_id))} --menu_order={shlex.quote(str(order))}')
                     global_order += 1
 
         self.logger.info(
@@ -1743,12 +1752,12 @@ class LearnDashManager:
         user_id = self._validate_positive_int(user_id, "user_id")
         course_id = self._validate_positive_int(course_id, "course_id")
 
-        # Get user course progress meta
-        cmd = f'user meta get {user_id} course_progress_{course_id}'
+        # Get user course progress meta (Security: quote all parameters)
+        cmd = f'user meta get {shlex.quote(str(user_id))} {shlex.quote(f"course_progress_{course_id}")}'
         progress_data = self.cli.execute(cmd)
 
         # Get completed lessons
-        cmd = f'user meta list {user_id} --fields=meta_key,meta_value'
+        cmd = f'user meta list {shlex.quote(str(user_id))} --fields=meta_key,meta_value'
         all_meta = self.cli.execute(cmd, format="json")
 
         completed_lessons = [
@@ -1796,8 +1805,8 @@ class LearnDashManager:
         # Validate inputs
         course_id = self._validate_positive_int(course_id, "course_id")
 
-        # Get all enrolled users
-        cmd = f'post meta get {course_id} learndash_course_users'
+        # Get all enrolled users (Security: quote all parameters)
+        cmd = f'post meta get {shlex.quote(str(course_id))} {shlex.quote("learndash_course_users")}'
         enrolled_users_data = self.cli.execute(cmd)
 
         # Parse user IDs (this might be serialized data)
@@ -1830,12 +1839,12 @@ class LearnDashManager:
         # Validate inputs
         group_id = self._validate_positive_int(group_id, "group_id")
 
-        # Get group users
-        cmd = f'post meta get {group_id} learndash_group_users'
+        # Get group users (Security: quote all parameters)
+        cmd = f'post meta get {shlex.quote(str(group_id))} {shlex.quote("learndash_group_users")}'
         group_users_data = self.cli.execute(cmd)
 
         # Get associated courses
-        cmd = f'post meta list {group_id} --fields=meta_key,meta_value'
+        cmd = f'post meta list {shlex.quote(str(group_id))} --fields=meta_key,meta_value'
         group_meta = self.cli.execute(cmd, format="json")
 
         course_ids = [
@@ -2035,8 +2044,8 @@ class LearnDashManager:
         # Validate inputs
         quiz_id = self._validate_positive_int(quiz_id, "quiz_id")
 
-        # Get quiz meta
-        cmd = f'post meta list {quiz_id} --fields=meta_key,meta_value'
+        # Get quiz meta (Security: quote all parameters)
+        cmd = f'post meta list {shlex.quote(str(quiz_id))} --fields=meta_key,meta_value'
         quiz_meta = self.cli.execute(cmd, format="json")
 
         # Get quiz settings
@@ -2047,7 +2056,7 @@ class LearnDashManager:
         )
 
         # Get quiz questions count
-        questions_cmd = f'post list --post_type=sfwd-question --meta_key=quiz_id --meta_value={quiz_id}'
+        questions_cmd = f'post list --post_type=sfwd-question --meta_key=quiz_id --meta_value={shlex.quote(str(quiz_id))}'
         questions = self.cli.execute(questions_cmd, format="json")
         total_questions = len(questions) if questions else 0
 
@@ -2086,8 +2095,8 @@ class LearnDashManager:
         # Validate inputs
         user_id = self._validate_positive_int(user_id, "user_id")
 
-        # Get user meta for certificates
-        cmd = f'user meta list {user_id} --fields=meta_key,meta_value'
+        # Get user meta for certificates (Security: quote all parameters)
+        cmd = f'user meta list {shlex.quote(str(user_id))} --fields=meta_key,meta_value'
         all_meta = self.cli.execute(cmd, format="json")
 
         certificates = []
@@ -2133,8 +2142,8 @@ class LearnDashManager:
         course_id = self._validate_positive_int(course_id, "course_id")
         format = self._validate_literal(format, "format", ["json", "csv"])
 
-        # Get all enrolled users
-        cmd = f'post meta get {course_id} learndash_course_users'
+        # Get all enrolled users (Security: quote all parameters)
+        cmd = f'post meta get {shlex.quote(str(course_id))} {shlex.quote("learndash_course_users")}'
         enrolled_users_data = self.cli.execute(cmd)
 
         # Get course info
